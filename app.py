@@ -4,6 +4,7 @@ Satisfaction Gap Analyzer — Flask application entry point.
 
 from __future__ import annotations
 
+import os
 import pickle
 import uuid
 from io import BytesIO
@@ -27,11 +28,26 @@ from utils.simulation import (
 )
 
 app = Flask(__name__)
-app.secret_key = "change-this-in-production"
+app.secret_key = os.environ.get("SECRET_KEY", "change-this-in-production")
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # 32 MB
 
-UPLOAD_DIR = Path(__file__).parent / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
+
+def _resolve_upload_dir() -> Path:
+    """
+    Local dev uses ./uploads. Vercel serverless only allows writes under /tmp.
+    Override with UPLOAD_DIR if needed.
+    """
+    if os.environ.get("UPLOAD_DIR"):
+        base = Path(os.environ["UPLOAD_DIR"])
+    elif os.environ.get("VERCEL"):
+        base = Path("/tmp/gap-analyzer-uploads")
+    else:
+        base = Path(__file__).parent / "uploads"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+UPLOAD_DIR = _resolve_upload_dir()
 
 ALLOWED_EXTENSIONS = {".sav", ".xlsx", ".xls", ".csv"}
 
