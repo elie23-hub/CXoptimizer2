@@ -1,0 +1,384 @@
+{% if error_message %}
+<section class="card error-card">
+  <div class="error-card-header">
+    <span class="error-icon">✗</span>
+    <div>
+      <strong class="error-title">Could not process file</strong>
+      {% if filename %}
+      <span class="error-file">File: {{ filename }}</span>
+      {% endif %}
+    </div>
+  </div>
+  <p class="error-detail">{{ error_message }}</p>
+
+  {% if parse_result and parse_result.get('load_failed') %}
+  <div class="error-tips">
+    <strong>Tips for .sav files:</strong>
+    <ul>
+      <li>Open the file in SPSS first to confirm it is not corrupted.</li>
+      <li>Re-export from SPSS: <em>File → Save As → .sav</em></li>
+      <li>Or export as Excel (.xlsx) and upload that instead.</li>
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if parse_result and parse_result.get('columns_found') %}
+  <div class="columns-found">
+    <strong>Columns found in file{% if parse_result.columns_found|length >= 20 %} (first 20){% endif %}:</strong>
+    <p class="columns-list">{{ parse_result.columns_found | join(', ') }}</p>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if parse_result and not parse_result.get('load_failed') %}
+
+<section class="card file-status-card">
+  <div class="file-status-left">
+    <span class="file-icon">{% if parse_result.success %}📊{% else %}📋{% endif %}</span>
+    <div class="file-info">
+      <strong class="file-name">{{ parse_result.filename }}</strong>
+      <span class="file-meta">
+        {{ parse_result.kept_rows }} responses ·
+        {{ parse_result.file_size_kb }} KB ·
+        {{ parse_result.total_statements }} statements
+      </span>
+    </div>
+  </div>
+  <div class="file-status-right">
+    {% if parse_result.success %}
+      <span class="badge badge-success">✓ Valid</span>
+    {% else %}
+      <span class="badge badge-warning">⚠ Needs review</span>
+    {% endif %}
+    <label class="btn btn-ghost" for="replace_file">↻ Replace</label>
+    <input type="file" id="replace_file" accept=".sav,.xlsx,.xls,.csv" hidden>
+  </div>
+</section>
+
+{% if parse_result.question_labels %}
+<section class="card question-labels-card">
+  <div class="card-title-row">
+    <div>
+      <h2 class="card-title">
+        {% if parse_result.has_spss_labels %}SPSS variable labels{% else %}Question labels{% endif %}
+      </h2>
+      <p class="card-subtitle">
+        {{ parse_result.question_labels|length }} label(s) from {{ parse_result.filename }}.
+        {% if parse_result.question_labels[0].label %}
+        Example: {{ parse_result.question_labels[0].label[:80] }}{% if parse_result.question_labels[0].label|length > 80 %}…{% endif %}
+        {% endif %}
+      </p>
+    </div>
+    <label class="question-label-search-wrap">
+      <span class="search-label">Search:</span>
+      <input type="search" class="question-label-search" placeholder="Filter…" aria-label="Search question labels">
+    </label>
+  </div>
+  <div class="table-wrapper question-labels-scroll">
+    <table class="data-table question-labels-table">
+      <thead>
+        <tr>
+          <th>Variable</th>
+          <th>Label</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in parse_result.question_labels %}
+        <tr class="question-label-row" data-variable="{{ item.variable }}">
+          <td class="var-cell">{{ item.variable }}</td>
+          <td class="question-label-cell" title="{{ item.full_label }}">{{ item.label }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="table-footnote question-labels-count">
+    Showing <span class="question-labels-visible">{{ parse_result.question_labels|length }}</span>
+    of {{ parse_result.question_labels|length }} entries
+  </p>
+</section>
+{% endif %}
+
+{% if parse_result.preview_rows %}
+<section class="card data-preview-card">
+  <div class="card-title-row">
+    <div class="data-preview-title-block">
+      <h2 class="card-title">Data preview</h2>
+      {% if parse_result.summary_stats and parse_result.summary_stats.rows %}
+      <button
+        type="button"
+        class="btn btn-ghost summary-stats-btn"
+        id="summary-stats-btn"
+        aria-expanded="false"
+        aria-controls="summary-stats-panel"
+      >
+        Summary stats
+      </button>
+      {% endif %}
+    </div>
+    <span class="preview-file-meta">
+      File: {{ parse_result.filename }} · Rows: {{ parse_result.kept_rows }}
+    </span>
+  </div>
+
+  {% if parse_result.summary_stats and parse_result.summary_stats.rows %}
+  <div id="summary-stats-panel" class="summary-stats-panel">
+    <section class="summary-stats-block">
+      <h3 class="summary-stats-block-title">Column summary statistics</h3>
+      <p class="summary-stats-block-desc">
+        Descriptive stats for each column on the original data before imputation.
+      </p>
+      <div class="table-wrapper data-preview-scroll summary-stats-scroll">
+        <table class="data-table summary-stats-table" id="summary-stats-table">
+          <thead>
+            <tr>
+              <th class="summary-stat-col">Statistic</th>
+              {% for col in parse_result.summary_stats.columns %}
+              <th>{{ col.label }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for stat in parse_result.summary_stats.rows %}
+            <tr>
+              <th class="summary-stat-col">{{ stat.label }}</th>
+              {% for col in parse_result.summary_stats.columns %}
+              <td class="{% if stat.id == 'frequencies' %}summary-responses-cell{% endif %}">
+                {{ stat['values'].get(col.key, '—') }}
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="table-footnote summary-stats-block-footnote">
+        Summary based on all {{ parse_result.summary_stats.n_rows }} rows
+        (original data before imputation).
+      </p>
+    </section>
+
+    {% if parse_result.respondent_missing and parse_result.respondent_missing.stats %}
+    <section class="summary-stats-block">
+      <h3 class="summary-stats-block-title">Missing values by respondent</h3>
+      <p class="summary-stats-block-desc">
+        Average share of statement values missing before imputation, across all
+        {{ parse_result.respondent_missing.n_total }} respondents.
+      </p>
+      <div class="missing-rate-hero" aria-label="Average missing rate across respondents">
+        <span class="missing-rate-hero-value">{{ parse_result.respondent_missing.stats.mean_missing_rate }}%</span>
+        <span class="missing-rate-hero-label">average missing rate</span>
+      </div>
+    </section>
+    {% endif %}
+
+    {% if parse_result.respondent_cv and parse_result.respondent_cv.points %}
+    <section class="summary-stats-block">
+      <h3 class="summary-stats-block-title">Respondent CV — coefficient of variation (stdev / mean across statements)</h3>
+      <div class="respondent-cv-chart-wrap" tabindex="0" aria-label="Scroll horizontally to view all respondents">
+        <div class="respondent-cv-chart-inner">
+          <svg
+            id="respondent-cv-chart"
+            class="respondent-cv-chart"
+            role="img"
+            aria-label="Scatter plot of coefficient of variation per respondent"
+          ></svg>
+        </div>
+      </div>
+      <script type="application/json" id="respondent-cv-data">{{ parse_result.respondent_cv | tojson }}</script>
+      {% if parse_result.respondent_cv.stats %}
+      <p class="table-footnote summary-stats-block-footnote">
+        CV computed for {{ parse_result.respondent_cv.n_computed }} of
+        {{ parse_result.respondent_cv.n_total }} respondents
+        {% if parse_result.respondent_cv.n_skipped %}
+        ({{ parse_result.respondent_cv.n_skipped }} skipped — too few valid answers)
+        {% endif %}
+        · mean CV {{ parse_result.respondent_cv.stats.mean }}
+        · min {{ parse_result.respondent_cv.stats.min }}
+        · max {{ parse_result.respondent_cv.stats.max }}
+      </p>
+      {% endif %}
+    </section>
+
+    <section class="summary-stats-block">
+      <h3 class="summary-stats-block-title">CV z-scores vs normal density</h3>
+      <p class="summary-stats-block-desc">
+        Each point is one respondent's CV converted to a z-score (relative to the sample mean and stdev).
+        The curve is the standard normal probability density function.
+      </p>
+      <div class="respondent-cv-chart-wrap respondent-cv-chart-wrap--fit" tabindex="0" aria-label="Normal density curve of respondent CV z-scores">
+        <div class="respondent-cv-chart-inner respondent-cv-chart-inner--fit">
+          <svg
+            id="respondent-cv-normal-chart"
+            class="respondent-cv-chart"
+            role="img"
+            aria-label="Normal density curve of respondent CV z-scores"
+          ></svg>
+        </div>
+      </div>
+    </section>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="table-wrapper data-preview-scroll">
+    <table class="data-table preview-grid-table" id="data-preview-table">
+      <thead>
+        <tr>
+          {% for col in parse_result.preview_columns %}
+          <th>
+            <button
+              type="button"
+              class="th-sort-btn"
+              data-col-idx="{{ loop.index0 }}"
+              data-sort="none"
+              aria-label="Sort by {{ col.label }}"
+            >
+              <span>{{ col.label }}</span>
+              <span class="sort-arrows" aria-hidden="true">⇅</span>
+            </button>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in parse_result.preview_rows %}
+        <tr>
+          {% for col in parse_result.preview_columns %}
+          <td data-col-idx="{{ loop.index0 }}">{{ row.get(col.key, '') }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="table-footnote">
+    Showing {{ parse_result.preview_rows|length }} sample rows · {{ parse_result.preview_columns|length }} columns
+    (original data before imputation).
+  </p>
+</section>
+{% endif %}
+
+{% if parse_result.cant_say_cells > 0 or parse_result.singular_groups %}
+<section class="alert alert-warning impute-box">
+  <span class="alert-icon">⚠</span>
+  <div class="impute-summary">
+    {% if parse_result.cant_say_cells > 0 %}
+    <p class="impute-lead">
+      <strong>{{ parse_result.cant_say_cells }}</strong> missing values across all statements.
+    </p>
+    <p class="impute-note">
+      Includes <strong>{{ parse_result.code_6_count }}</strong> code&nbsp;{{ parse_result.cant_say_code }} ("can't say")
+      and <strong>{{ parse_result.blank_count }}</strong> empty cells.
+      {% if parse_result.imputed_cells > 0 %}
+      {{ parse_result.imputed_cells }} imputed using triple-mean.
+      {% endif %}
+    </p>
+    {% endif %}
+    {% if parse_result.singular_groups %}
+    <p class="impute-lead{% if parse_result.cant_say_cells > 0 %} impute-lead-spaced{% endif %}">
+      <strong>Singular matrix warning</strong> — collinear statement pairs detected:
+    </p>
+    <p class="impute-note">
+      Each line is a set of statements that are <strong>linearly dependent</strong>
+      (perfect or near-perfect collinearity — singular matrix risk for MLR).
+      Pairs are checked on all rows where both statements have a value.
+      <strong>Gap analysis is disabled</strong> until each pair is resolved (remove or combine one statement).
+    </p>
+    <ul class="singular-flag-list">
+      {% for group in parse_result.singular_groups %}
+      <li class="singular-group-item">
+        {% if group.variables|length == 2 %}
+        <strong>{{ group.variables[0] }}</strong>
+        <span class="singular-pair-sep">↔</span>
+        <strong>{{ group.variables[1] }}</strong>
+        {% else %}
+        <strong>{{ group.variables | join(', ') }}</strong>
+        {% endif %}
+        {% if group.max_correlation %}
+        <span class="singular-flag-label"> (|r|&nbsp;=&nbsp;{{ group.max_correlation }})</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if parse_result.sections or parse_result.validation %}
+<div class="two-col">
+  {% if parse_result.sections %}
+  <section class="card">
+    <h2 class="card-title">Detected structure</h2>
+    <p class="card-subtitle structure-hint">
+      Name each section exactly as in your questionnaire (e.g. booking, driver, vehicle).
+    </p>
+    <ul class="structure-list">
+      {% for sec in parse_result.sections %}
+      <li>
+        <span class="structure-code">S{{ sec.section }}</span>
+        <input
+          type="text"
+          class="structure-name-input"
+          data-section="{{ sec.section }}"
+          value="{{ sec.name }}"
+          placeholder="Section {{ sec.section }} name…"
+          maxlength="80"
+          aria-label="Name for section {{ sec.section }}"
+        >
+        <span class="structure-count">{{ sec.count }} statement{{ 's' if sec.count != 1 else '' }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if parse_result.validation %}
+  <section class="card">
+    <h2 class="card-title">Validation</h2>
+    <ul class="validation-list">
+      {% for item in parse_result.validation %}
+      <li class="{% if item.ok %}valid{% else %}invalid{% endif %}">
+        <span class="check-icon">{% if item.ok %}✓{% else %}✗{% endif %}</span>
+        {{ item.text }}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if parse_result.success %}
+<div class="action-row">
+  <a href="{{ url_for('gap_analysis_page') }}" class="btn btn-primary btn-large">
+    Run analysis →
+  </a>
+</div>
+{% endif %}
+
+<footer class="status-bar results-status-bar">
+  <span class="status-left">
+    {% if parse_result.success %}✓{% else %}⚠{% endif %}
+    {{ parse_result.sections|length }} sections ·
+    {{ parse_result.total_statements }} statements ·
+    {{ parse_result.kept_rows }} responses kept
+  </span>
+  <span class="status-right">
+    {% if parse_result.success %}Ready to analyze{% else %}Fix issues before analyzing{% endif %}
+  </span>
+</footer>
+
+{% elif parse_result and parse_result.get('load_failed') %}
+<section class="card file-status-card file-status-failed">
+  <div class="file-status-left">
+    <span class="file-icon">⚠️</span>
+    <div class="file-info">
+      <strong class="file-name">{{ parse_result.filename }}</strong>
+      <span class="file-meta">{{ parse_result.file_size_kb }} KB — file received but could not be read</span>
+    </div>
+  </div>
+</section>
+{% endif %}

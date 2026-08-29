@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Gap analysis — Satisfaction gap analyzer{% endblock %}
+{% block page_heading %}Gap analysis{% endblock %}
+
+{% block content %}
+
+<section class="gap-toolbar card">
+  <div class="gap-toolbar-left">
+    <label class="gap-select-wrap">
+      <span class="gap-select-label">Scale</span>
+      <select id="gap-scale" class="gap-select">
+        <option value="">Choose scale…</option>
+      </select>
+    </label>
+    <label class="gap-select-wrap">
+      <span class="gap-select-label">Performance Metric</span>
+      <select id="gap-metric" class="gap-select" disabled>
+        <option value="">Choose metric…</option>
+      </select>
+    </label>
+    <label class="gap-select-wrap">
+      <span class="gap-select-label">Sections</span>
+      <select id="gap-section" class="gap-select" disabled>
+        <option value="all" selected>All sections</option>
+      </select>
+    </label>
+  </div>
+</section>
+
+<div id="gap-prompt" class="card gap-prompt">
+  <p>Choose a <strong>scale</strong> and <strong>performance metric</strong> to train the regression model on your uploaded data and display results.</p>
+</div>
+
+<div id="gap-loading" class="card gap-model-bar" hidden>
+  <div class="gap-model-bar-left">
+    <div class="loading-spinner" id="gap-model-spinner"></div>
+    <div class="gap-model-bar-copy">
+      <span id="gap-model-status-text">Training model on uploaded data…</span>
+      <span class="gap-model-note">Importance scores come from a regression on 70% of respondents (absolute weights, normalized to 100%).</span>
+      <p class="gap-fit-progress" id="gap-fit-progress" hidden></p>
+    </div>
+  </div>
+  <div class="gap-model-bar-right">
+    <button
+      type="button"
+      id="gap-model-quality-btn"
+      class="btn btn-ghost gap-model-quality-btn"
+      disabled
+      aria-expanded="false"
+      aria-controls="gap-model-quality-panel"
+    >
+      Model quality
+    </button>
+    <div id="gap-model-quality-panel" class="gap-model-quality-panel" hidden>
+      <h3 class="gap-model-quality-title">MLR model quality</h3>
+      <p class="gap-model-quality-hint" id="gap-model-quality-hint"></p>
+      <dl class="gap-model-quality-metrics" id="gap-model-quality-metrics"></dl>
+    </div>
+  </div>
+</div>
+
+<div id="gap-error" class="card error-card" hidden>
+  <p class="error-detail" id="gap-error-text"></p>
+</div>
+
+<div id="gap-results" hidden>
+
+  <div class="gap-stat-row">
+    <div class="gap-stat-card">
+      <span class="gap-stat-value" id="stat-sections">—</span>
+      <span class="gap-stat-label">Sections</span>
+    </div>
+    <div class="gap-stat-card">
+      <span class="gap-stat-value" id="stat-statements">—</span>
+      <span class="gap-stat-label">Statements</span>
+    </div>
+    <div class="gap-stat-card">
+      <span class="gap-stat-value" id="stat-overall">—</span>
+      <span class="gap-stat-label">Overall sat.</span>
+    </div>
+    <div class="gap-stat-card gap-stat-urgent">
+      <span class="gap-stat-value" id="stat-urgent">—</span>
+      <span class="gap-stat-label">Fix urgently</span>
+    </div>
+  </div>
+
+  <div class="gap-chart-row">
+    <section class="card gap-biplot-card" id="gap-biplot-card">
+      <div class="gap-biplot-header">
+        <h2 class="card-title">Importance vs. performance</h2>
+        <div class="gap-biplot-controls" id="gap-biplot-controls" hidden>
+          <button type="button" class="btn btn-ghost gap-biplot-ctrl" id="gap-biplot-reset" title="Reset zoom and pan">Reset view</button>
+          <button type="button" class="btn btn-ghost gap-biplot-ctrl" id="gap-biplot-fullscreen" title="Fullscreen chart" aria-label="Fullscreen chart">Fullscreen</button>
+        </div>
+      </div>
+      <div class="gap-biplot-stage" id="gap-biplot-stage">
+        <div class="biplot-wrap biplot-wrap--large" id="gap-biplot-wrap">
+          <div id="gap-biplot" class="gap-biplot-plot" role="img" aria-label="Importance vs performance bi-plot"></div>
+        </div>
+        <p class="biplot-hint" id="gap-biplot-hint" hidden>Use the chart toolbar to zoom, pan, or download as PNG</p>
+      </div>
+      <div class="biplot-legend">
+        <span class="legend-item legend-maintain"><i></i> High performance high importance</span>
+        <span class="legend-item legend-low"><i></i> Low performance low importance</span>
+        <span class="legend-item legend-urgent"><i></i> Low performance high importance</span>
+        <span class="legend-item legend-overkill"><i></i> High performance low importance</span>
+      </div>
+    </section>
+
+    <section class="card gap-priority-card">
+      <div class="card-title-row">
+        <h2 class="card-title">Priority actions</h2>
+        <span class="priority-count" id="priority-count"></span>
+      </div>
+      <div class="priority-scroll">
+        <ul class="priority-list" id="priority-list"></ul>
+      </div>
+    </section>
+  </div>
+
+  <section class="card gap-table-card">
+    <h2 class="card-title">Results table</h2>
+    <div class="table-wrapper gap-table-scroll">
+      <table class="data-table gap-results-table" id="gap-results-table">
+        <thead>
+          <tr>
+            <th>Statement</th>
+            <th>Section</th>
+            <th>Performance</th>
+            <th>Importance</th>
+            <th>Reduced importance</th>
+            <th>Z performance. (X)</th>
+            <th>Z importance. (Y)</th>
+            <th>Position</th>
+          </tr>
+        </thead>
+        <tbody id="gap-table-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="gap-export-row">
+    <button type="button" class="btn btn-export btn-export-outline" id="gap-export-xlsx" disabled>
+      Export xlsx
+    </button>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block footer %}
+<footer class="status-bar gap-status-bar" id="gap-status-bar">
+  <span class="status-left" id="gap-status-left">Awaiting scale &amp; metric selection</span>
+  <span class="status-center" id="gap-status-metric"></span>
+  <span class="status-right" id="gap-status-time"></span>
+</footer>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<script src="{{ url_for('static', filename='js/gap_analysis.js') }}?v=53"></script>
+{% endblock %}

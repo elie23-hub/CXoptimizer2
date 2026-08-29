@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Satisfaction Gap Analyzer{% endblock %}
+{% block body_class %}landing-body{% endblock %}
+{% block shell_class %}site-page{% endblock %}
+
+{% block page_content %}
+<main class="landing-hero">
+  <h1 class="landing-title">
+    <span class="landing-title-line"><span>Turn research data into</span></span>
+    <span class="landing-title-line"><span>clear improvement priorities</span></span>
+  </h1>
+
+  <p class="landing-subtitle">
+    A satisfaction gap analyzer that transforms customer/employee ratings into importance–performance
+    insights, MLR models, and what-if simulations so teams can
+    know what truly drives satisfaction and what to prioritize for further improvement.
+  </p>
+
+  <figure class="landing-flow" aria-label="Analysis workflow">
+    <figcaption class="landing-flow-caption">How it works</figcaption>
+    <div class="landing-flow-track">
+      <div class="landing-flow-step">
+        <span class="landing-flow-num">1</span>
+        <strong class="landing-flow-title">Upload</strong>
+        <span class="landing-flow-desc">Import .sav, .xlsx, or .csv</span>
+      </div>
+      <span class="landing-flow-arrow" aria-hidden="true"></span>
+      <div class="landing-flow-step">
+        <span class="landing-flow-num">2</span>
+        <strong class="landing-flow-title">Review</strong>
+        <span class="landing-flow-desc">Preview data &amp; labels</span>
+      </div>
+      <span class="landing-flow-arrow" aria-hidden="true"></span>
+      <div class="landing-flow-step">
+        <span class="landing-flow-num">3</span>
+        <strong class="landing-flow-title">Gap analysis</strong>
+        <span class="landing-flow-desc">MLR importance vs performance</span>
+      </div>
+      <span class="landing-flow-arrow" aria-hidden="true"></span>
+      <div class="landing-flow-step">
+        <span class="landing-flow-num">4</span>
+        <strong class="landing-flow-title">Simulation</strong>
+        <span class="landing-flow-desc">What-if score changes</span>
+      </div>
+      <span class="landing-flow-arrow" aria-hidden="true"></span>
+      <div class="landing-flow-step">
+        <span class="landing-flow-num">5</span>
+        <strong class="landing-flow-title">Summary</strong>
+        <span class="landing-flow-desc">Brief Summary of Findings</span>
+      </div>
+    </div>
+  </figure>
+
+  <div class="landing-actions">
+    <a href="{{ url_for('upload_page') }}" class="landing-btn landing-btn--primary">
+      Get started
+    </a>
+  </div>
+</main>
+{% endblock %}

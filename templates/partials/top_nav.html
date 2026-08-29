@@ -1,0 +1,24 @@
+<aside class="app-nav" aria-label="Primary">
+  <a href="{{ url_for('index') }}" class="app-nav-brand" aria-label="Statometry Data Lab">
+    <img
+      src="{{ url_for('static', filename='img/statometry-datalab-logo.png') }}"
+      alt="Statometry Data Lab"
+      class="app-nav-brand-logo"
+      width="260"
+      height="56"
+      decoding="async"
+    />
+  </a>
+  <nav class="app-nav-links">
+    <a href="{{ url_for('index') }}"
+       class="app-nav-link{% if active_page == 'home' %} is-active{% endif %}">Home</a>
+    <a href="{{ url_for('upload_page') }}"
+       class="app-nav-link{% if active_page == 'upload' %} is-active{% endif %}">Upload</a>
+    <a href="{{ url_for('gap_analysis_page') }}"
+       class="app-nav-link{% if active_page == 'gap' %} is-active{% endif %}">Gap analysis</a>
+    <a href="{{ url_for('simulation_page') }}"
+       class="app-nav-link{% if active_page == 'simulation' %} is-active{% endif %}">Simulation</a>
+    <a href="{{ url_for('summary_page') }}"
+       class="app-nav-link{% if active_page == 'summary' %} is-active{% endif %}">Summary</a>
+  </nav>
+</aside>

@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}Simulation — Satisfaction gap analyzer{% endblock %}
+{% block page_heading %}Simulation{% endblock %}
+
+{% block content %}
+
+<div class="sim-mode-tabs" role="tablist" aria-label="Simulation mode">
+  <button type="button" class="sim-mode-btn is-active" data-mode="bottom-up" role="tab" aria-selected="true">
+    Bottom-up
+  </button>
+  <button type="button" class="sim-mode-btn" data-mode="top-down" role="tab" aria-selected="false">
+    Top-down
+  </button>
+</div>
+
+<!-- Bottom-up -->
+<section id="sim-osat-panel" class="sim-osat-panel" hidden data-sim-mode="bottom-up">
+  <p class="sim-osat-gauge-label">Predicted overall satisfaction</p>
+  <div
+    class="sim-osat-gauge"
+    id="sim-osat-gauge"
+    role="meter"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    aria-valuenow="0"
+    aria-label="Predicted overall satisfaction"
+  >
+    <div class="sim-osat-gauge-dial">
+      <canvas
+        id="sim-gauge-canvas"
+        class="sim-osat-gauge-canvas"
+        width="320"
+        height="200"
+        aria-hidden="true"
+      ></canvas>
+    </div>
+    <div class="sim-osat-gauge-value" id="sim-predicted-overall">—</div>
+    <div class="sim-osat-gauge-meta">
+      <span class="sim-osat-baseline">from <span id="sim-baseline-overall">—</span></span>
+      <span class="sim-result-delta" id="sim-delta-badge" hidden>
+        <span class="sim-delta-icon" aria-hidden="true">↗</span>
+        <span id="sim-delta-text">+0 pts</span>
+      </span>
+    </div>
+  </div>
+</section>
+<div id="sim-osat-spacer" class="sim-osat-spacer" aria-hidden="true"></div>
+
+<p id="sim-mode-hint" class="sim-mode-hint" data-sim-mode="bottom-up">
+  Set improved performance scores (%) for each statement and see how overall
+  satisfaction improves.
+</p>
+
+<p id="sim-mode-hint-topdown" class="sim-mode-hint" data-sim-mode="top-down" hidden>
+  Set a target overall satisfaction score, then choose which priority quadrants you want
+  to trigger a change in their statement scores.
+</p>
+
+<div id="sim-prompt" class="card sim-prompt" hidden>
+  <p id="sim-prompt-text">
+    Run <a href="{{ url_for('gap_analysis_page') }}">gap analysis</a> first to load statement
+    performance scores into the simulation engine.
+  </p>
+</div>
+
+<div id="sim-error" class="card error-card" hidden>
+  <p class="error-detail" id="sim-error-text"></p>
+</div>
+
+<div id="sim-workspace" hidden data-sim-mode="bottom-up">
+  <div class="sim-actions-bar">
+    <button type="button" class="btn btn-ghost" id="sim-reset-scores">Reset</button>
+    <button type="button" class="btn btn-ghost" id="sim-set-all-100">Set to 100%</button>
+  </div>
+  <section class="card sim-statements-card">
+    <div id="sim-statements-list" class="sim-statements-list"></div>
+  </section>
+  <div class="gap-export-row sim-export-row" data-sim-mode="bottom-up">
+    <button type="button" class="btn btn-export btn-export-outline" id="sim-bu-export-xlsx" disabled>Export xlsx</button>
+  </div>
+</div>
+
+<!-- Top-down -->
+<div id="sim-topdown" hidden data-sim-mode="top-down">
+  <section class="card sim-td-target-card">
+    <label class="sim-td-target-label" for="sim-td-target">
+      Target overall satisfaction
+    </label>
+    <div class="sim-td-target-control">
+      <input
+        type="number"
+        id="sim-td-target"
+        class="sim-td-target-input"
+        min="0"
+        max="100"
+        step="0.1"
+        value="95"
+        inputmode="decimal"
+      />
+      <span class="sim-td-target-unit" aria-hidden="true">%</span>
+    </div>
+  </section>
+
+  <section class="card sim-td-quadrant-card">
+    <h2 class="card-title sim-td-quadrant-title">Allow changes in</h2>
+    <p class="sim-td-quadrant-hint">
+      Check the quadrant(s) whose statement scores may be adjusted to hit the target.
+    </p>
+    <div class="sim-td-quadrant-grid" role="group" aria-label="Quadrants that may change">
+      <label class="sim-td-quadrant-option sim-td-q-urgent">
+        <input type="checkbox" name="sim-td-quadrant" value="urgent" />
+        <span class="sim-td-quadrant-swatch" aria-hidden="true"></span>
+        <span class="sim-td-quadrant-text">
+          <strong>Urgent</strong>
+          <span>Low performance · high importance</span>
+        </span>
+      </label>
+      <label class="sim-td-quadrant-option sim-td-q-maintain">
+        <input type="checkbox" name="sim-td-quadrant" value="maintain" />
+        <span class="sim-td-quadrant-swatch" aria-hidden="true"></span>
+        <span class="sim-td-quadrant-text">
+          <strong>Maintain</strong>
+          <span>High performance · high importance</span>
+        </span>
+      </label>
+      <label class="sim-td-quadrant-option sim-td-q-low">
+        <input type="checkbox" name="sim-td-quadrant" value="low" />
+        <span class="sim-td-quadrant-swatch" aria-hidden="true"></span>
+        <span class="sim-td-quadrant-text">
+          <strong>Low priority</strong>
+          <span>Low performance · low importance</span>
+        </span>
+      </label>
+      <label class="sim-td-quadrant-option sim-td-q-overkill">
+        <input type="checkbox" name="sim-td-quadrant" value="overkill" />
+        <span class="sim-td-quadrant-swatch" aria-hidden="true"></span>
+        <span class="sim-td-quadrant-text">
+          <strong>Overkill</strong>
+          <span>High performance · low importance</span>
+        </span>
+      </label>
+    </div>
+  </section>
+
+  <div class="sim-td-workspace" id="sim-td-workspace">
+    <section class="card gap-biplot-card sim-td-biplot-card" id="sim-td-biplot-card" hidden>
+      <div class="gap-biplot-header">
+        <h2 class="card-title">Importance vs. performance</h2>
+        <div class="gap-biplot-controls" id="sim-td-biplot-controls">
+          <button type="button" class="btn btn-ghost gap-biplot-ctrl" id="sim-td-biplot-reset" title="Reset zoom and pan">Reset view</button>
+          <button type="button" class="btn btn-ghost gap-biplot-ctrl" id="sim-td-biplot-fullscreen" title="Fullscreen chart" aria-label="Fullscreen chart">Fullscreen</button>
+        </div>
+      </div>
+      <div class="gap-biplot-stage">
+        <div class="biplot-wrap biplot-wrap--large" id="sim-td-biplot-wrap">
+          <div id="sim-td-biplot" class="gap-biplot-plot" role="img" aria-label="Simulated importance vs performance bi-plot"></div>
+        </div>
+        <p class="biplot-hint">Original gap-analysis positions. Check a quadrant to move statements toward the target.</p>
+      </div>
+      <div class="biplot-legend">
+        <span class="legend-item legend-maintain"><i></i> High performance high importance</span>
+        <span class="legend-item legend-low"><i></i> Low performance low importance</span>
+        <span class="legend-item legend-urgent"><i></i> Low performance high importance</span>
+        <span class="legend-item legend-overkill"><i></i> High performance low importance</span>
+      </div>
+    </section>
+
+    <section class="card sim-td-results-card" id="sim-td-results" hidden>
+      <div class="sim-td-results-header">
+        <h2 class="card-title sim-td-results-title">Changed scores</h2>
+        <span class="sim-td-achieved" id="sim-td-achieved" hidden></span>
+      </div>
+      <ul class="sim-td-list" id="sim-td-list"></ul>
+    </section>
+  </div>
+  <div class="gap-export-row sim-export-row" data-sim-mode="top-down">
+    <button type="button" class="btn btn-export btn-export-outline" id="sim-td-export-xlsx" disabled>Export xlsx</button>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block footer %}
+<footer class="status-bar sim-status-bar" id="sim-status-bar">
+  <span class="status-left" id="sim-status-left">Mode: bottom-up</span>
+  <span class="status-center" id="sim-status-detail">You set scores → weighted OSAT is computed</span>
+  <span class="status-right" id="sim-status-model">Reduced importance model</span>
+</footer>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<script src="{{ url_for('static', filename='js/simulation.js') }}?v=65"></script>
+{% endblock %}

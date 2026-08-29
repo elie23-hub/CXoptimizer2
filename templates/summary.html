@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Summary — Satisfaction gap analyzer{% endblock %}
+{% block page_heading %}Summary{% endblock %}
+
+{% block content %}
+
+<header class="sum-page-header">
+  <div class="sum-page-heading">
+    <h1 class="sum-page-title">Summary</h1>
+    <p class="sum-page-meta" id="sum-page-meta"></p>
+  </div>
+</header>
+
+<div id="sum-prompt" class="card sim-prompt" hidden>
+  <p id="sum-prompt-text">
+    Run <a href="{{ url_for('gap_analysis_page') }}">gap analysis</a> and explore
+    <a href="{{ url_for('simulation_page') }}">simulation</a> first to review results here.
+  </p>
+</div>
+
+<div id="sum-error" class="card error-card" hidden>
+  <p class="error-detail" id="sum-error-text"></p>
+</div>
+
+<div id="sum-workspace" hidden>
+  <section class="card sum-sim-card" aria-live="polite">
+    <h2 class="card-title sum-sim-card-title">Top-down</h2>
+    <div class="sum-sim-copy">
+      <p class="sum-sim-lead" id="sum-sim-lead"></p>
+      <p class="sum-sim-sub" id="sum-sim-sub"></p>
+    </div>
+
+    <div class="sum-sim-legend" id="sum-sim-legend" hidden></div>
+
+    <div class="sum-bar-list" id="sum-bar-list"></div>
+  </section>
+</div>
+
+{% endblock %}
+
+{% block footer %}
+<footer class="status-bar" id="sum-status-bar">
+  <span class="status-left" id="sum-status-left">Summary</span>
+  <span class="status-center" id="sum-status-detail"></span>
+  <span class="status-right" id="sum-status-right"></span>
+</footer>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/summary.js') }}?v=11"></script>
+{% endblock %}

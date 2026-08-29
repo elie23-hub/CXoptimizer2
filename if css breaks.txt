@@ -1,0 +1,10 @@
+if css breaks
+
+cd c:\Users\user\Desktop\Internship
+Copy-Item -Force static\css\style.canonical.css static\css\style.css
+
+or 	
+
+python scripts/build_style_css.py
+python scripts/verify_css.py
+

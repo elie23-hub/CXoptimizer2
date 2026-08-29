@@ -1,0 +1,4 @@
+TO RUN STATOMETRY GAP ANALYIZER APP
+
+cd c:\Users\user\Desktop\Internship
+python app.py

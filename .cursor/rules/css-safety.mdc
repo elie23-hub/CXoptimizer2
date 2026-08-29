@@ -1,0 +1,38 @@
+---
+description: Protect style.css from accidental truncation or partial edits
+globs: static/css/**/*
+alwaysApply: false
+---
+
+# CSS safety rules
+
+`static/css/style.css` was accidentally truncated in a past session. Follow these rules:
+
+## Do not
+
+- Replace or rewrite the entire `style.css` in one shot
+- Append large blocks with one-off Python one-liners unless you update `style.canonical.css` afterward
+- Delete `style.canonical.css` or `style.supplements.css`
+
+## Do
+
+1. **Small targeted edits** — use `StrReplace` on the specific rule only
+2. **New sections** — add rules to `static/css/style.supplements.css`, then run:
+   ```
+   python scripts/build_style_css.py
+   ```
+3. **After any CSS change** — run:
+   ```
+   python scripts/verify_css.py
+   ```
+4. **Recovery** — if styles break, run `python scripts/build_style_css.py`
+
+## Source of truth
+
+| File | Purpose |
+|------|---------|
+| `style.backup.css` | Pre-landing base (gap analysis, upload, browse bar) |
+| `scripts/replay_css_pre_iqr.py` | Replays landing/app/glass/button patches from transcript |
+| `style.supplements.css` | Additional rules not in replay |
+| `style.canonical.css` | Frozen known-good output of `build_style_css.py` |
+| `REQUIRED_SELECTORS.txt` | Checklist for `verify_css.py` |

@@ -1,0 +1,20 @@
+:root
+--btn-bg
+body.app-body
+body.landing-body
+.landing-bg-curve
+.landing-nav-links a.is-active
+--glass-bg
+.summary-stats-block
+.summary-stats-panel.is-open
+.respondent-cv-chart-wrap--fit
+.respondent-cv-chart .cv-curve
+.respondent-cv-chart .cv-point
+.missing-rate-hero
+#gap-loading.is-quality-open
+.sim-mode-tabs
+.sim-statement-header
+.sim-slider
+.browse-track
+.gap-priority-card
+#gap-biplot .biplot-label

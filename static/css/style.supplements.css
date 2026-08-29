@@ -1,0 +1,642 @@
+/* Patches missing from replayed base — merged by scripts/build_style_css.py */
+
+/* Summary stats panel blocks */
+.summary-stats-block {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.summary-stats-block .card-title-row {
+  margin-bottom: 0;
+}
+
+.summary-stats-block-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.summary-stats-block-desc {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.summary-stats-block-footnote {
+  margin: 10px 0 0;
+}
+
+.summary-stats-block .respondent-cv-chart-wrap {
+  border: none;
+  background: transparent;
+  padding: 0;
+  height: auto;
+}
+
+.summary-stats-block .table-wrapper {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.summary-stats-panel {
+  display: none;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.summary-stats-panel.is-open {
+  display: flex;
+}
+
+/* CV / normal-density chart polish */
+.respondent-cv-chart-wrap--fit {
+  overflow: hidden;
+}
+
+.respondent-cv-chart-inner--fit {
+  display: block;
+  width: 100%;
+  height: 280px;
+}
+
+.respondent-cv-chart-inner--fit .respondent-cv-chart {
+  width: 100%;
+  max-width: 100%;
+}
+
+.respondent-cv-chart .cv-curve-line {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 1.5;
+}
+
+.respondent-cv-chart .cv-curve-iqr-fill {
+  fill: rgba(88, 166, 255, 0.10);
+  stroke: none;
+}
+
+/* Gap biplot — Plotly chart toolbar */
+#gap-biplot .modebar-group {
+  background: rgba(22, 27, 34, 0.92) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+#gap-biplot .modebar-btn {
+  color: #8b949e;
+}
+
+#gap-biplot .modebar-btn:hover {
+  color: #e8eaed;
+}
+
+#gap-biplot .modebar-btn path {
+  fill: currentColor !important;
+}
+
+/* Gap model quality panel — opaque dropdown, not glass */
+body.app-body .gap-model-quality-panel {
+  background: rgba(22, 27, 34, 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.gap-model-quality-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gap-model-quality-metrics > div {
+  display: grid;
+  grid-template-columns: minmax(180px, 42%) 1fr;
+  gap: 4px 20px;
+  align-items: baseline;
+}
+
+.gap-model-quality-metrics dt {
+  line-height: 1.4;
+}
+
+.gap-model-quality-metrics dd {
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* Simulation statement rows (match simulation.js) */
+.sim-statements-card {
+  padding: 8px 0 4px;
+}
+
+.sim-section-group + .sim-section-group {
+  border-top: 1px solid var(--border-color);
+}
+
+.sim-section-header {
+  padding: 12px 20px 8px;
+  background: #21262d;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-blue);
+}
+
+.sim-section-statements {
+  display: flex;
+  flex-direction: column;
+}
+
+.sim-statements-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.sim-statement-row {
+  display: block;
+  padding: 16px 20px;
+}
+
+.sim-statement-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.sim-statement-values {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sim-val-current {
+  color: var(--text-secondary);
+}
+
+.sim-val-arrow {
+  margin: 0 4px;
+  color: var(--text-muted);
+}
+
+.sim-val-sim {
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.sim-slider {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+}
+
+/* Bottom-up OSAT speedometer — canvas dial (top of simulation page) */
+.sim-osat-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px 6px;
+  margin-bottom: 6px;
+}
+
+.sim-osat-panel[hidden] {
+  display: none !important;
+}
+
+.sim-osat-gauge-label {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.sim-osat-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  width: min(340px, 94vw);
+}
+
+.sim-osat-gauge-dial {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  width: 100%;
+  line-height: 0;
+}
+
+.sim-osat-gauge-canvas {
+  display: block;
+  width: 320px;
+  max-width: 100%;
+  height: auto;
+}
+
+.sim-osat-gauge-value {
+  margin-top: 2px;
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sim-osat-gauge-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.sim-osat-baseline {
+  font-size: 15px;
+  color: var(--text-muted);
+}
+
+.sim-result-card {
+  text-align: center;
+  padding: 24px 20px;
+}
+
+.sim-result-value {
+  font-size: 48px;
+  color: var(--success-green);
+}
+
+.sim-delta-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* App shell — file badge only (no page title) */
+.top-header--file-only {
+  justify-content: flex-end;
+}
+
+/* Landing nav — brand + links on row 1; partner logo on row 2 */
+.landing-nav-brand {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.landing-nav-links {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.landing-nav-spacer {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.landing-nav-partner-logo {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+  display: block;
+  height: 28px;
+  width: auto;
+  max-width: min(180px, 42vw);
+  object-fit: contain;
+  margin-left: 2px;
+  mix-blend-mode: multiply;
+  filter: brightness(1.45) contrast(1.12) saturate(1.1);
+  opacity: 0.9;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.8) 6%,
+    #000 16%,
+    #000 84%,
+    rgba(0, 0, 0, 0.8) 94%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.8) 6%,
+    #000 16%,
+    #000 84%,
+    rgba(0, 0, 0, 0.8) 94%,
+    transparent 100%
+  );
+}
+
+/* Landing badge — Statometry logo on dark background */
+.landing-badge--logo {
+  padding: 0;
+  border: none;
+  background: transparent;
+  gap: 0;
+  line-height: 0;
+}
+
+.landing-badge-logo {
+  display: block;
+  height: 36px;
+  width: auto;
+  max-width: min(220px, 72vw);
+  object-fit: contain;
+  mix-blend-mode: multiply;
+  filter: brightness(1.45) contrast(1.12) saturate(1.1);
+  opacity: 0.9;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.75) 8%,
+    #000 18%,
+    #000 82%,
+    rgba(0, 0, 0, 0.75) 92%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.75) 8%,
+    #000 18%,
+    #000 82%,
+    rgba(0, 0, 0, 0.75) 92%,
+    transparent 100%
+  );
+}
+
+/* Landing page — slide-in entrance animations */
+:root {
+  --landing-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --landing-ease-soft: cubic-bezier(0.22, 0.68, 0.36, 1);
+  --landing-ease-drift: cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+@keyframes landing-bg-reveal {
+  from {
+    opacity: 0;
+    transform: scale(1.035);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes landing-slide-down {
+  0% {
+    opacity: 0;
+    transform: translateY(-28px);
+    filter: blur(8px);
+  }
+  65% {
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes landing-slide-up {
+  0% {
+    opacity: 0;
+    transform: translateY(40px) scale(0.985);
+    filter: blur(10px);
+  }
+  70% {
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes landing-slide-in-left {
+  0% {
+    opacity: 0;
+    transform: translateX(-40px) scale(0.98);
+    filter: blur(8px);
+  }
+  70% {
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes landing-fade-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+body.landing-body .landing-bg-curve {
+  animation: landing-bg-reveal 1.6s var(--landing-ease-drift) both;
+}
+
+body.landing-body .landing-bg-grid {
+  animation: landing-bg-reveal 1.8s var(--landing-ease-drift) 0.12s both;
+}
+
+body.landing-body .landing-bg-shapes {
+  animation: landing-fade-rise 1.5s var(--landing-ease-soft) 0.2s both;
+}
+
+body.landing-body .landing-nav-brand {
+  animation: landing-slide-in-left 1.05s var(--landing-ease-out) 0.1s both;
+  opacity: 0;
+}
+
+body.landing-body .landing-nav-partner-logo {
+  animation: landing-slide-in-left 1.05s var(--landing-ease-out) 0.22s both;
+  opacity: 0;
+}
+
+body.landing-body .landing-nav-links a {
+  display: inline-block;
+  opacity: 0;
+  animation: landing-slide-down 1s var(--landing-ease-out) both;
+}
+
+body.landing-body .landing-nav-links a:nth-child(1) {
+  animation-delay: 0.18s;
+}
+
+body.landing-body .landing-nav-links a:nth-child(2) {
+  animation-delay: 0.26s;
+}
+
+body.landing-body .landing-nav-links a:nth-child(3) {
+  animation-delay: 0.34s;
+}
+
+body.landing-body .landing-nav-links a:nth-child(4) {
+  animation-delay: 0.42s;
+}
+
+body.landing-body .landing-nav-links a:nth-child(5) {
+  animation-delay: 0.5s;
+}
+
+body.landing-body .landing-title {
+  animation: landing-slide-up 1.2s var(--landing-ease-out) 0.38s both;
+}
+
+body.landing-body .landing-subtitle {
+  animation: landing-slide-up 1.2s var(--landing-ease-out) 0.62s both;
+}
+
+body.landing-body .landing-flow-caption {
+  animation: landing-fade-rise 0.9s var(--landing-ease-soft) 0.68s both;
+  opacity: 0;
+}
+
+body.landing-body .landing-flow-track {
+  animation: landing-slide-up 1.1s var(--landing-ease-out) 0.72s both;
+  opacity: 0;
+}
+
+body.landing-body .landing-flow-step {
+  opacity: 0;
+  animation: landing-fade-rise 0.8s var(--landing-ease-soft) both;
+}
+
+body.landing-body .landing-flow-step:nth-of-type(1) {
+  animation-delay: 0.8s;
+}
+
+body.landing-body .landing-flow-step:nth-of-type(2) {
+  animation-delay: 0.88s;
+}
+
+body.landing-body .landing-flow-step:nth-of-type(3) {
+  animation-delay: 0.96s;
+}
+
+body.landing-body .landing-flow-step:nth-of-type(4) {
+  animation-delay: 1.04s;
+}
+
+body.landing-body .landing-flow-arrow {
+  opacity: 0;
+  animation: landing-fade-rise 0.75s var(--landing-ease-soft) both;
+}
+
+body.landing-body .landing-flow-arrow:nth-of-type(1) {
+  animation-delay: 0.84s;
+}
+
+body.landing-body .landing-flow-arrow:nth-of-type(2) {
+  animation-delay: 0.92s;
+}
+
+body.landing-body .landing-flow-arrow:nth-of-type(3) {
+  animation-delay: 1s;
+}
+
+body.landing-body .landing-actions {
+  animation: landing-slide-up 1.15s var(--landing-ease-out) 1.12s both;
+}
+
+body.landing-body .landing-trust-label {
+  animation: landing-fade-rise 1s var(--landing-ease-soft) 0.95s both;
+  opacity: 0;
+}
+
+body.landing-body .landing-trust {
+  animation: landing-slide-up 1.15s var(--landing-ease-out) 0.9s both;
+}
+
+body.landing-body .landing-logos span {
+  display: inline-block;
+  opacity: 0;
+  animation: landing-slide-up 0.95s var(--landing-ease-out) both;
+}
+
+body.landing-body .landing-logos span:nth-child(1) {
+  animation-delay: 1.08s;
+}
+
+body.landing-body .landing-logos span:nth-child(2) {
+  animation-delay: 1.18s;
+}
+
+body.landing-body .landing-logos span:nth-child(3) {
+  animation-delay: 1.28s;
+}
+
+body.landing-body .landing-logos span:nth-child(4) {
+  animation-delay: 1.38s;
+}
+
+body.landing-body .landing-logos span:nth-child(5) {
+  animation-delay: 1.48s;
+}
+
+body.landing-body .landing-btn--primary {
+  transition:
+    background 0.35s var(--landing-ease-soft),
+    border-color 0.35s var(--landing-ease-soft),
+    color 0.35s var(--landing-ease-soft),
+    transform 0.45s var(--landing-ease-out),
+    box-shadow 0.45s var(--landing-ease-soft);
+}
+
+body.landing-body .landing-btn--primary:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 16px 44px rgba(56, 139, 253, 0.22);
+}
+
+body.landing-body .landing-btn--primary:active {
+  transform: translateY(-1px) scale(1);
+  transition-duration: 0.12s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.landing-body .landing-bg-curve,
+  body.landing-body .landing-bg-grid,
+  body.landing-body .landing-bg-shapes,
+  body.landing-body .landing-nav-partner-logo,
+  body.landing-body .landing-nav-brand,
+  body.landing-body .landing-nav-links a,
+  body.landing-body .landing-title,
+  body.landing-body .landing-subtitle,
+  body.landing-body .landing-flow-caption,
+  body.landing-body .landing-flow-track,
+  body.landing-body .landing-flow-step,
+  body.landing-body .landing-flow-arrow,
+  body.landing-body .landing-actions,
+  body.landing-body .landing-trust,
+  body.landing-body .landing-trust-label,
+  body.landing-body .landing-logos span {
+    animation: none;
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+
+  body.landing-body .landing-btn--primary:hover,
+  body.landing-body .landing-btn--primary:active {
+    transform: none;
+  }
+}

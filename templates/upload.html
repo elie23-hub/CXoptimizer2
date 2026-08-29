@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="card upload-card">
+  <h2 class="card-title upload-title">Upload survey data</h2>
+  <p class="card-subtitle upload-subtitle">
+    Statement columns: <code>S1_Q1</code>, <code>S1_Q2</code>, <code>S2_Q1</code> … &nbsp;|&nbsp;
+    Overall column: <code>OSAT</code>, <code>Overall OSAT</code>, or <code>OSAT_Overall</code>
+  </p>
+
+  <form method="POST" enctype="multipart/form-data" class="upload-form" id="upload-form">
+    <div class="upload-browse-block">
+
+      <label class="dataset-label">Dataset (.sav, .xlsx, .csv)</label>
+
+      <!-- Browse bar — blue fill grows in width inside this row -->
+      <div class="file-browse-row" id="file-browse-row">
+        <label class="browse-btn" for="survey_file">Browse…</label>
+        <div class="browse-track" id="browse-track">
+          <div class="browse-fill" id="browse-fill"></div>
+          <span class="browse-label" id="browse-label">No file chosen</span>
+        </div>
+        <input type="file" id="survey_file" name="survey_file" accept=".sav,.xlsx,.xls,.csv" hidden>
+      </div>
+
+    </div>
+  </form>
+
+  <form id="clear-form" method="POST" action="{{ url_for('clear_upload') }}" hidden></form>
+</section>
+
+<div id="results-container" class="results-container"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/upload.js') }}?v=30"></script>
+{% endblock %}

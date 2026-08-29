@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Satisfaction gap analyzer{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=152">
+</head>
+<body class="{% block body_class %}app-body{% endblock %}">
+
+  <div class="{% block shell_class %}site-page site-page--app{% endblock %}">
+    <div class="app-shell">
+      {% include "partials/top_nav.html" %}
+
+      {% block page_content %}
+      <div class="main-wrapper">
+        {% if filename %}
+        <header class="top-header top-header--file-only">
+          <span class="file-badge">{{ filename }}</span>
+        </header>
+        {% endif %}
+
+        <main class="main-content">
+          {% block content %}{% endblock %}
+        </main>
+
+        {% block footer %}{% endblock %}
+      </div>
+      {% endblock %}
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/session_guard.js') }}?v=1"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
