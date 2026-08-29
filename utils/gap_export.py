@@ -66,8 +66,7 @@ CHART_Z_COL = 11
 CHART_TITLE_CELL = (1, 9)  # I1
 CHART_ANCHOR_CELL = (1, 10)  # J1
 
-# Populated while building charts; consumed by XML post-processing.
-_chart_label_batches: list[list[tuple[str, str]]] = []
+# Populated per export request and passed into chart XML post-processing.
 
 
 def _escape_xml_text(text: str) -> str:
@@ -432,6 +431,16 @@ def _equal_axis_extent(
     return -extent, extent
 
 
+def _style_biplot_axes(chart: ScatterChart) -> None:
+    """Axis box lines without numeric tick labels (openpyxl + XML patch)."""
+    axis_border = GraphicalProperties(ln=LineProperties(solidFill="C9CED8"))
+    for axis in (chart.x_axis, chart.y_axis):
+        axis.spPr = axis_border
+        axis.majorTickMark = "none"
+        axis.minorTickMark = "none"
+        axis.tickLblPos = "none"
+
+
 def _quadrant_marker_color(quadrant: str) -> str:
     return QUADRANT_COLORS.get((quadrant or "").strip().lower(), CHART_MARKER_BLUE)
 
@@ -443,7 +452,7 @@ def _add_openpyxl_chart(
     first: int,
     last: int,
     anchor_row: int,
-) -> None:
+) -> list[tuple[str, str]]:
     """
     Biplot-style scatter: equal X/Y axis dimensions (shared z extent),
     centered under the table, markers only, labels from Label column,
@@ -480,6 +489,7 @@ def _add_openpyxl_chart(
     major = round(span / 10.0, 2) if span > 0 else 0.5
     chart.x_axis.majorUnit = major
     chart.y_axis.majorUnit = major
+    _style_biplot_axes(chart)
     chart.legend = None
     # Square chart object => equal visual quadrant sizes
     chart_size_cm = 16.0
@@ -526,7 +536,6 @@ def _add_openpyxl_chart(
         dLbls.dLbl.append(point_lbl)
         series.dLbls = dLbls
         chart.series.append(series)
-    _chart_label_batches.append(label_batch)
     # Center under results table (A-H)
     table_px = _table_width_px(ws, last_col=8)
     chart_px = chart_size_cm * (96.0 / 2.54)
@@ -538,6 +547,7 @@ def _add_openpyxl_chart(
         ext=XDRPositiveSize2D(cx=cm_to_EMU(chart_size_cm), cy=cm_to_EMU(chart_size_cm)),
     )
     ws.add_chart(chart)
+    return label_batch
 
 
 def _inject_dLbl_layout(dLbl_xml: str, ox: float, oy: float) -> str:
@@ -672,7 +682,7 @@ def _patch_chart_xml_leader_lines(
 
 
 def _patch_chart_xml_restore_axes(xml: str) -> str:
-    """Restore axis box lines; hide numeric tick labels on both axes."""
+    """Ensure axis box lines show and numeric tick labels stay hidden."""
 
     axis_line = (
         "<spPr><ln w=\"9525\" cap=\"flat\">"
@@ -682,30 +692,36 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
 
     def patch_axis(match: re.Match[str]) -> str:
         block = match.group(0)
-        tag = match.group(1)
+        ns = match.group(1) or ""
+        tag = match.group(2)
+        open_tag = f"<{ns}{tag}>"
+        close_tag = f"</{ns}{tag}>"
         block = re.sub(
-            r"<tickLblPos[^/]*/>",
+            r"<(?:c:)?tickLblPos[^/]*/>",
             '<tickLblPos val="none"/>',
             block,
         )
         if "tickLblPos" not in block:
-            block = block.replace(
-                f"</{tag}>", f'<tickLblPos val="none"/></{tag}>', 1
-            )
+            block = block.replace(close_tag, '<tickLblPos val="none"/>' + close_tag, 1)
         block = re.sub(
-            r"<majorTickMark[^/]*/>",
+            r"<(?:c:)?majorTickMark[^/]*/>",
             '<majorTickMark val="none"/>',
             block,
         )
         if "majorTickMark" not in block:
             block = block.replace(
-                f"</{tag}>", f'<majorTickMark val="none"/></{tag}>', 1
+                close_tag, '<majorTickMark val="none"/>' + close_tag, 1
             )
-        if "<spPr>" not in block:
-            block = block.replace(f"<{tag}>", f"<{tag}>{axis_line}", 1)
+        if "<spPr>" not in block and "<a:ln" not in block:
+            block = block.replace(open_tag, open_tag + axis_line, 1)
         return block
 
-    return re.sub(r"<(valAx|catAx)>.*?</\1>", patch_axis, xml, flags=re.S)
+    return re.sub(
+        r"<(?:(c:)?)(valAx|catAx)>.*?</(?:(c:)?)(?:valAx|catAx)>",
+        patch_axis,
+        xml,
+        flags=re.S,
+    )
 
 
 def _patch_chart_xml_hide_legend_keys(xml: str) -> str:
@@ -737,13 +753,21 @@ def _patch_chart_xml_hide_legend_keys(xml: str) -> str:
 
 
 def _patch_chart_xml(xml: str, label_cells: list[tuple[str, str]] | None = None) -> str:
-    xml = _patch_chart_xml_leader_lines(xml, label_cells or [])
-    xml = _patch_chart_xml_hide_legend_keys(xml)
-    xml = _patch_chart_xml_restore_axes(xml)
+    try:
+        xml = _patch_chart_xml_leader_lines(xml, label_cells or [])
+        xml = _patch_chart_xml_hide_legend_keys(xml)
+    except Exception:
+        pass
+    try:
+        xml = _patch_chart_xml_restore_axes(xml)
+    except Exception:
+        pass
     return xml
 
 
-def _patch_workbook_leader_lines(data: bytes) -> bytes:
+def _patch_workbook_charts(
+    data: bytes, label_batches: list[list[tuple[str, str]]]
+) -> bytes:
     """Post-process chart XML (labels, leader lines, axes)."""
     src = zipfile.ZipFile(BytesIO(data), "r")
     out = BytesIO()
@@ -753,18 +777,15 @@ def _patch_workbook_leader_lines(data: bytes) -> bytes:
             raw = src.read(info.filename)
             name = info.filename
             if name.startswith("xl/charts/chart") and name.endswith(".xml"):
-                try:
-                    text = raw.decode("utf-8")
-                    labels = (
-                        _chart_label_batches[chart_idx]
-                        if chart_idx < len(_chart_label_batches)
-                        else []
-                    )
-                    patched = _patch_chart_xml(text, labels)
-                    raw = patched.encode("utf-8")
-                    chart_idx += 1
-                except Exception:
-                    pass
+                text = raw.decode("utf-8")
+                labels = (
+                    label_batches[chart_idx]
+                    if chart_idx < len(label_batches)
+                    else []
+                )
+                text = _patch_chart_xml(text, labels)
+                raw = text.encode("utf-8")
+                chart_idx += 1
             dst.writestr(info, raw)
     src.close()
     return out.getvalue()
@@ -782,6 +803,7 @@ def _build_sheet(
     include_section_headers: bool,
     used_names: set[str],
     add_chart: bool,
+    label_batches: list[list[tuple[str, str]]],
 ) -> None:
     safe_name = _safe_sheet_title(sheet_name, used_names)
     ws = wb.create_sheet(title=safe_name)
@@ -809,13 +831,14 @@ def _build_sheet(
 
     if source_meta and add_chart:
         _hdr, first, last = source_meta
-        _add_openpyxl_chart(
+        label_batch = _add_openpyxl_chart(
             ws,
             chart_title=chart_title,
             first=first,
             last=last,
             anchor_row=anchor_row,
         )
+        label_batches.append(label_batch)
 
     ws.freeze_panes = f"A{next_row + 1}"
     ws.sheet_view.showGridLines = False
@@ -827,8 +850,7 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
       - Sheet 1: All Sections (full table + chart)
       - Sheet 2+: one sheet per section (chart titled with section name)
     """
-    global _chart_label_batches
-    _chart_label_batches = []
+    label_batches: list[list[tuple[str, str]]] = []
     table = result.get("table") or {}
     sections = table.get("sections") or []
     overall = table.get("overall_csat")
@@ -864,6 +886,7 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
         include_section_headers=True,
         used_names=used,
         add_chart=True,
+        label_batches=label_batches,
     )
 
     for sec in sections:
@@ -896,8 +919,9 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
             include_section_headers=False,
             used_names=used,
             add_chart=True,
+            label_batches=label_batches,
         )
 
     buf = BytesIO()
     wb.save(buf)
-    return _patch_workbook_leader_lines(buf.getvalue())
+    return _patch_workbook_charts(buf.getvalue(), label_batches)
