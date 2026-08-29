@@ -69,6 +69,10 @@
   }
 
   function clearSession() {
+    if (window.gapAnalyzerClearAllClientState) {
+      window.gapAnalyzerClearAllClientState();
+      return;
+    }
     sessionStorage.removeItem(STORAGE_KEY);
     sessionStorage.removeItem(GAP_STORAGE_KEY);
     sessionStorage.removeItem("gapAnalyzer_sim_summary");
@@ -124,10 +128,11 @@
     clearSession();
     resetServerSession();
     resetBrowseBar();
-    const badge = document.querySelector(".file-badge");
-    if (badge) badge.remove();
   } else {
     restoreSession();
+    if (window.gapAnalyzerRefreshNavGuard) {
+      window.gapAnalyzerRefreshNavGuard();
+    }
   }
 
   function setProgress(percent) {
@@ -263,6 +268,9 @@
       saveSession(data.filename, html, {});
       if (window.gapAnalyzerUploadCache) {
         window.gapAnalyzerUploadCache.save(file).catch(function () {});
+      }
+      if (window.gapAnalyzerRefreshNavGuard) {
+        window.gapAnalyzerRefreshNavGuard();
       }
       updateHeaderBadge(data.filename);
       bindReplaceHandler();

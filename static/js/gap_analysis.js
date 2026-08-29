@@ -372,7 +372,7 @@
         text: pts.map(function (p) {
           return shortBiplotLabel(p.label);
         }),
-        textposition: "middle center",
+        textposition: "top center",
         textfont: {
           size: 10,
           color: "#1b254a",
@@ -391,7 +391,6 @@
         }),
         hovertemplate:
           "<b>%{hovertext}</b><br>Performance: %{customdata[0]}%<br>Importance: %{customdata[1]}%<br>Z performance: %{customdata[2]}<br>Z importance: %{customdata[3]}<extra></extra>",
-        name: theme.label,
         showlegend: false,
       };
     }).filter(Boolean);
@@ -1460,6 +1459,7 @@
     const layout = {
       autosize: true,
       height: getBiplotHeight(),
+      showlegend: false,
       paper_bgcolor: "#ffffff",
       plot_bgcolor: "#ffffff",
       margin: { l: 52, r: 28, t: 28, b: 48 },

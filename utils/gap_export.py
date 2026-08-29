@@ -66,6 +66,38 @@ CHART_Z_COL = 11
 CHART_TITLE_CELL = (1, 9)  # I1
 CHART_ANCHOR_CELL = (1, 10)  # J1
 
+# Populated while building charts; consumed by XML post-processing.
+_chart_label_batches: list[list[tuple[str, str]]] = []
+
+
+def _escape_xml_text(text: str) -> str:
+    return (
+        str(text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _label_cell_formula(sheet_title: str, row: int) -> str:
+    col = get_column_letter(CHART_Z_COL + 3)
+    safe = str(sheet_title or "Sheet").replace("'", "''")
+    return f"'{safe}'!${col}${row}"
+
+
+def _label_tx_xml(formula: str, text: str) -> str:
+    return (
+        "<tx><strRef>"
+        f"<f>{_escape_xml_text(formula)}</f>"
+        "<strCache>"
+        '<ptCount val="1"/>'
+        '<pt idx="0">'
+        f"<v>{_escape_xml_text(text)}</v>"
+        "</pt></strCache>"
+        "</strRef></tx>"
+    )
+
 
 def _fill(hex_color: str) -> PatternFill:
     return PatternFill("solid", fgColor=hex_color)
@@ -441,13 +473,9 @@ def _add_openpyxl_chart(
     chart.y_axis.scaling.max = axis_max
     chart.x_axis.crosses = "autoZero"
     chart.y_axis.crosses = "autoZero"
-    # No gridlines (biplot-style clean axes)
+    # No gridlines; keep axis box and tick labels (matches VBA biplot).
     chart.x_axis.majorGridlines = None
     chart.y_axis.majorGridlines = None
-    chart.x_axis.majorTickMark = "none"
-    chart.x_axis.minorTickMark = "none"
-    chart.y_axis.majorTickMark = "none"
-    chart.y_axis.minorTickMark = "none"
     span = axis_max - axis_min
     major = round(span / 10.0, 2) if span > 0 else 0.5
     chart.x_axis.majorUnit = major
@@ -458,6 +486,8 @@ def _add_openpyxl_chart(
     chart.height = chart_size_cm
     chart.width = chart_size_cm
 
+    label_batch: list[tuple[str, str]] = []
+
     for row in range(first, last + 1):
         xvalues = Reference(ws, min_col=CHART_Z_COL, min_row=row, max_row=row)
         yvalues = Reference(ws, min_col=CHART_Z_COL + 1, min_row=row, max_row=row)
@@ -466,6 +496,7 @@ def _add_openpyxl_chart(
         title = str(label).strip() if label not in (None, "") else f"Point {row}"
         if len(title) > 200:
             title = title[:197] + "..."
+        label_batch.append((_label_cell_formula(ws.title, row), title))
         series = Series(yvalues, xvalues, title=title)
         # Markers only — no connecting line between points
         series.graphicalProperties = GraphicalProperties(
@@ -477,22 +508,25 @@ def _add_openpyxl_chart(
             ln=LineProperties(noFill=True),
         )
         dLbls = DataLabelList()
-        dLbls.showSerName = True
+        dLbls.showSerName = False
         dLbls.showVal = False
         dLbls.showCatName = False
         dLbls.showPercent = False
+        dLbls.showLegendKey = False
         dLbls.showLeaderLines = True
         dLbls.dLblPos = "r"
         # Per-point label entry (layout offset added in _patch_chart_leader_lines)
         point_lbl = DataLabel(idx=0)
-        point_lbl.showSerName = True
+        point_lbl.showSerName = False
         point_lbl.showVal = False
         point_lbl.showCatName = False
+        point_lbl.showLegendKey = False
         point_lbl.showLeaderLines = True
         point_lbl.dLblPos = "r"
         dLbls.dLbl.append(point_lbl)
         series.dLbls = dLbls
         chart.series.append(series)
+    _chart_label_batches.append(label_batch)
     # Center under results table (A-H)
     table_px = _table_width_px(ws, last_col=8)
     chart_px = chart_size_cm * (96.0 / 2.54)
@@ -526,10 +560,12 @@ def _inject_dLbl_layout(dLbl_xml: str, ox: float, oy: float) -> str:
     )
 
 
-def _patch_chart_xml_leader_lines(xml: str) -> str:
+def _patch_chart_xml_leader_lines(
+    xml: str, label_cells: list[tuple[str, str]]
+) -> str:
     """
     Excel draws scatter leader lines only when labels are manually offset.
-    Inject factor-based layout offsets into each series' data labels.
+    Inject factor-based layout offsets and cell-based label text (no legend key).
     """
     offsets = (
         (0.05, -0.06),
@@ -543,6 +579,10 @@ def _patch_chart_xml_leader_lines(xml: str) -> str:
         nonlocal ser_idx
         block = match.group(0)
         ox, oy = offsets[ser_idx % 4]
+        formula, text = ("", "")
+        if ser_idx < len(label_cells):
+            formula, text = label_cells[ser_idx]
+        tx_xml = _label_tx_xml(formula, text) if formula else ""
         ser_idx += 1
 
         def patch_dlbls(m: re.Match[str]) -> str:
@@ -556,26 +596,70 @@ def _patch_chart_xml_leader_lines(xml: str) -> str:
                     '<showLeaderLines val="1"/>',
                     dlbls,
                 )
+            dlbls = re.sub(
+                r"<showSerName[^/]*/>",
+                '<showSerName val="0"/>',
+                dlbls,
+            )
+            dlbls = re.sub(
+                r"<showLegendKey[^/]*/>",
+                '<showLegendKey val="0"/>',
+                dlbls,
+            )
+            if "showSerName" not in dlbls:
+                dlbls = dlbls.replace("</dLbls>", '<showSerName val="0"/></dLbls>')
+            if "showLegendKey" not in dlbls:
+                dlbls = dlbls.replace("</dLbls>", '<showLegendKey val="0"/></dLbls>')
             # Ensure position is not center
             if "dLblPos" not in dlbls:
                 dlbls = dlbls.replace("</dLbls>", '<dLblPos val="r"/></dLbls>')
 
             if re.search(r"<dLbl[\s>]", dlbls):
+                def patch_point_lbl(mm: re.Match[str]) -> str:
+                    dlbl = mm.group(0)
+                    if tx_xml and "<tx>" not in dlbl:
+                        dlbl = re.sub(
+                            r"(<dLbl>\s*<idx[^/]*/>)",
+                            r"\1" + tx_xml,
+                            dlbl,
+                            count=1,
+                            flags=re.I,
+                        )
+                    dlbl = re.sub(
+                        r"<showSerName[^/]*/>",
+                        '<showSerName val="0"/>',
+                        dlbl,
+                    )
+                    dlbl = re.sub(
+                        r"<showLegendKey[^/]*/>",
+                        '<showLegendKey val="0"/>',
+                        dlbl,
+                    )
+                    if "showSerName" not in dlbl:
+                        dlbl = dlbl.replace("</dLbl>", '<showSerName val="0"/></dLbl>')
+                    if "showLegendKey" not in dlbl:
+                        dlbl = dlbl.replace(
+                            "</dLbl>", '<showLegendKey val="0"/></dLbl>'
+                        )
+                    return _inject_dLbl_layout(dlbl, ox, oy)
+
                 dlbls = re.sub(
                     r"<dLbl>.*?</dLbl>",
-                    lambda mm: _inject_dLbl_layout(mm.group(0), ox, oy),
+                    patch_point_lbl,
                     dlbls,
                     flags=re.S,
                 )
             else:
                 injected = (
                     f'<dLbl><idx val="0"/>'
+                    f"{tx_xml}"
                     f"<layout><manualLayout>"
                     f'<xMode val="factor"/><yMode val="factor"/>'
                     f'<x val="{ox:.4f}"/><y val="{oy:.4f}"/>'
                     f"</manualLayout></layout>"
                     f'<dLblPos val="r"/>'
-                    f'<showSerName val="1"/><showVal val="0"/>'
+                    f'<showSerName val="0"/><showVal val="0"/>'
+                    f'<showLegendKey val="0"/>'
                     f'<showLeaderLines val="1"/>'
                     f"</dLbl>"
                 )
@@ -587,42 +671,83 @@ def _patch_chart_xml_leader_lines(xml: str) -> str:
     return re.sub(r"<ser>.*?</ser>", patch_ser, xml, flags=re.S)
 
 
-def _patch_chart_xml_hide_axis_labels(xml: str) -> str:
-    """Hide numeric tick labels on value/category axes (biplot-style clean axes)."""
+def _patch_chart_xml_restore_axes(xml: str) -> str:
+    """Restore axis box lines and numeric tick labels on biplot axes."""
+
+    axis_line = (
+        "<spPr><ln w=\"9525\" cap=\"flat\">"
+        '<solidFill><srgbClr val="C9CED8"/></solidFill>'
+        "</ln></spPr>"
+    )
 
     def patch_axis(match: re.Match[str]) -> str:
         block = match.group(0)
-        if re.search(r"<tickLblPos\b", block):
-            return re.sub(
-                r"<tickLblPos[^/]*/>",
-                '<tickLblPos val="none"/>',
-                block,
-                count=1,
-            )
-        if re.search(r"<minorTickMark\b", block):
-            return re.sub(
-                r"(<minorTickMark[^/]*/>)",
-                r'\1<tickLblPos val="none"/>',
-                block,
-                count=1,
-            )
         tag = match.group(1)
-        return block.replace(f"</{tag}>", '<tickLblPos val="none"/></' + tag + ">", 1)
+        block = re.sub(
+            r"<tickLblPos[^/]*/>",
+            '<tickLblPos val="nextTo"/>',
+            block,
+        )
+        if "tickLblPos" not in block:
+            block = block.replace(
+                f"</{tag}>", f'<tickLblPos val="nextTo"/></{tag}>', 1
+            )
+        block = re.sub(
+            r"<majorTickMark[^/]*/>",
+            '<majorTickMark val="out"/>',
+            block,
+        )
+        if "majorTickMark" not in block:
+            block = block.replace(
+                f"</{tag}>", f'<majorTickMark val="out"/></{tag}>', 1
+            )
+        if "<spPr>" not in block:
+            block = block.replace(f"<{tag}>", f"<{tag}>{axis_line}", 1)
+        return block
 
-    xml = re.sub(r"<(valAx|catAx)>.*?</\1>", patch_axis, xml, flags=re.S)
-    return xml
+    return re.sub(r"<(valAx|catAx)>.*?</\1>", patch_axis, xml, flags=re.S)
 
 
-def _patch_chart_xml(xml: str) -> str:
-    xml = _patch_chart_xml_leader_lines(xml)
-    xml = _patch_chart_xml_hide_axis_labels(xml)
+def _patch_chart_xml_hide_legend_keys(xml: str) -> str:
+    """Ensure data labels never show colored legend-key squares."""
+
+    def patch_dlbls(match: re.Match[str]) -> str:
+        block = match.group(0)
+        block = re.sub(r"<showLegendKey[^/]*/>", '<showLegendKey val="0"/>', block)
+        block = re.sub(r"<showSerName[^/]*/>", '<showSerName val="0"/>', block)
+        if "showLegendKey" not in block:
+            block = block.replace("</dLbls>", '<showLegendKey val="0"/></dLbls>')
+        if "showSerName" not in block:
+            block = block.replace("</dLbls>", '<showSerName val="0"/></dLbls>')
+        return block
+
+    xml = re.sub(r"<dLbls>.*?</dLbls>", patch_dlbls, xml, flags=re.S)
+
+    def patch_dlbl(match: re.Match[str]) -> str:
+        block = match.group(0)
+        block = re.sub(r"<showLegendKey[^/]*/>", '<showLegendKey val="0"/>', block)
+        block = re.sub(r"<showSerName[^/]*/>", '<showSerName val="0"/>', block)
+        if "showLegendKey" not in block:
+            block = block.replace("</dLbl>", '<showLegendKey val="0"/></dLbl>')
+        if "showSerName" not in block:
+            block = block.replace("</dLbl>", '<showSerName val="0"/></dLbl>')
+        return block
+
+    return re.sub(r"<dLbl>.*?</dLbl>", patch_dlbl, xml, flags=re.S)
+
+
+def _patch_chart_xml(xml: str, label_cells: list[tuple[str, str]] | None = None) -> str:
+    xml = _patch_chart_xml_leader_lines(xml, label_cells or [])
+    xml = _patch_chart_xml_hide_legend_keys(xml)
+    xml = _patch_chart_xml_restore_axes(xml)
     return xml
 
 
 def _patch_workbook_leader_lines(data: bytes) -> bytes:
-    """Post-process chart XML (leader lines + hide axis tick numbers)."""
+    """Post-process chart XML (labels, leader lines, axes)."""
     src = zipfile.ZipFile(BytesIO(data), "r")
     out = BytesIO()
+    chart_idx = 0
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as dst:
         for info in src.infolist():
             raw = src.read(info.filename)
@@ -630,8 +755,14 @@ def _patch_workbook_leader_lines(data: bytes) -> bytes:
             if name.startswith("xl/charts/chart") and name.endswith(".xml"):
                 try:
                     text = raw.decode("utf-8")
-                    patched = _patch_chart_xml(text)
+                    labels = (
+                        _chart_label_batches[chart_idx]
+                        if chart_idx < len(_chart_label_batches)
+                        else []
+                    )
+                    patched = _patch_chart_xml(text, labels)
                     raw = patched.encode("utf-8")
+                    chart_idx += 1
                 except Exception:
                     pass
             dst.writestr(info, raw)
@@ -696,6 +827,8 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
       - Sheet 1: All Sections (full table + chart)
       - Sheet 2+: one sheet per section (chart titled with section name)
     """
+    global _chart_label_batches
+    _chart_label_batches = []
     table = result.get("table") or {}
     sections = table.get("sections") or []
     overall = table.get("overall_csat")

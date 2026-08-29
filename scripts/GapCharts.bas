@@ -133,6 +133,7 @@ Public Sub BuildOne(ByVal ws As Worksheet)
       .ShowValue = False
       .ShowCategoryName = False
       .ShowSeriesName = False
+      .ShowLegendKey = False
       .ShowBubbleSize = False
       .ShowPercentage = False
       .ShowLeaderLines = True
@@ -164,6 +165,8 @@ Public Sub BuildOne(ByVal ws As Worksheet)
       On Error Resume Next
       With .Points(pt).DataLabel
         .ShowLeaderLines = True
+        .ShowLegendKey = False
+        .ShowSeriesName = False
         .Position = xlLabelPositionRight
         Select Case ((pt - 1) Mod 4)
           Case 0

@@ -201,6 +201,13 @@ code {
   overflow: auto;
 }
 
+.app-nav-link.is-disabled,
+.app-nav-link[aria-disabled="true"] {
+  opacity: 0.42;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
 .app-nav-link {
   display: block;
   width: 100%;
