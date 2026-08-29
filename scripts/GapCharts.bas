@@ -226,7 +226,7 @@ Public Sub BuildOne(ByVal ws As Worksheet)
     .MinorUnit = majorStep / 2#
     .Crosses = xlAxisCrossesCustom
     .CrossesAt = 0
-    .TickLabelPosition = xlTickLabelPositionNextToAxis
+    .TickLabelPosition = xlTickLabelPositionNone
     .TickLabels.Font.Size = 9
     .TickLabels.Font.Color = RGB(156, 163, 175)
     .Border.Color = RGB(201, 206, 216)
@@ -250,7 +250,7 @@ Public Sub BuildOne(ByVal ws As Worksheet)
     .MinorUnit = majorStep / 2#
     .Crosses = xlAxisCrossesCustom
     .CrossesAt = 0
-    .TickLabelPosition = xlTickLabelPositionNextToAxis
+    .TickLabelPosition = xlTickLabelPositionNone
     .TickLabels.Font.Size = 9
     .TickLabels.Font.Color = RGB(156, 163, 175)
     .Border.Color = RGB(201, 206, 216)

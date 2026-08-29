@@ -473,7 +473,7 @@ def _add_openpyxl_chart(
     chart.y_axis.scaling.max = axis_max
     chart.x_axis.crosses = "autoZero"
     chart.y_axis.crosses = "autoZero"
-    # No gridlines; keep axis box and tick labels (matches VBA biplot).
+    # No gridlines; keep axis box, hide numeric tick labels (matches VBA biplot).
     chart.x_axis.majorGridlines = None
     chart.y_axis.majorGridlines = None
     span = axis_max - axis_min
@@ -672,7 +672,7 @@ def _patch_chart_xml_leader_lines(
 
 
 def _patch_chart_xml_restore_axes(xml: str) -> str:
-    """Restore axis box lines and numeric tick labels on biplot axes."""
+    """Restore axis box lines; hide numeric tick labels on both axes."""
 
     axis_line = (
         "<spPr><ln w=\"9525\" cap=\"flat\">"
@@ -685,21 +685,21 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
         tag = match.group(1)
         block = re.sub(
             r"<tickLblPos[^/]*/>",
-            '<tickLblPos val="nextTo"/>',
+            '<tickLblPos val="none"/>',
             block,
         )
         if "tickLblPos" not in block:
             block = block.replace(
-                f"</{tag}>", f'<tickLblPos val="nextTo"/></{tag}>', 1
+                f"</{tag}>", f'<tickLblPos val="none"/></{tag}>', 1
             )
         block = re.sub(
             r"<majorTickMark[^/]*/>",
-            '<majorTickMark val="out"/>',
+            '<majorTickMark val="none"/>',
             block,
         )
         if "majorTickMark" not in block:
             block = block.replace(
-                f"</{tag}>", f'<majorTickMark val="out"/></{tag}>', 1
+                f"</{tag}>", f'<majorTickMark val="none"/></{tag}>', 1
             )
         if "<spPr>" not in block:
             block = block.replace(f"<{tag}>", f"<{tag}>{axis_line}", 1)
