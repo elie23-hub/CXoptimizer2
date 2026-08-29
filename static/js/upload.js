@@ -72,6 +72,9 @@
     sessionStorage.removeItem(STORAGE_KEY);
     sessionStorage.removeItem(GAP_STORAGE_KEY);
     sessionStorage.removeItem("gapAnalyzer_sim_summary");
+    if (window.gapAnalyzerUploadCache) {
+      window.gapAnalyzerUploadCache.clear();
+    }
   }
 
   async function resetServerSession() {
@@ -258,6 +261,9 @@
 
       showResults(html);
       saveSession(data.filename, html, {});
+      if (window.gapAnalyzerUploadCache) {
+        window.gapAnalyzerUploadCache.save(file).catch(function () {});
+      }
       updateHeaderBadge(data.filename);
       bindReplaceHandler();
       bindSectionNameInputs();

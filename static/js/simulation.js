@@ -2096,6 +2096,17 @@
         return;
       }
 
+      if (window.gapAnalyzerUploadCache) {
+        var restored = await window.gapAnalyzerUploadCache.ensureServerUpload();
+        if (!restored && !loadStoredSnapshot()) {
+          showPrompt(
+            'Upload a survey file first on the <a href="/upload">Upload</a> page ' +
+              "before running a simulation."
+          );
+          return;
+        }
+      }
+
       const res = await fetchSimulationMeta();
       const data = res;
       if (!data.ok) {

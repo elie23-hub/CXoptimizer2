@@ -387,6 +387,42 @@ def save_section_names():
     return jsonify({"ok": True})
 
 
+@app.route("/api/session/status")
+def session_status():
+    return jsonify(
+        {
+            "ok": True,
+            "has_upload": _has_upload_session(),
+            "session_id": session.get("session_id"),
+            "filename": session.get("filename"),
+        }
+    )
+
+
+@app.route("/api/session/restore", methods=["POST"])
+def session_restore():
+    """Re-process a cached client upload onto this serverless instance."""
+    uploaded = request.files.get("survey_file")
+    if not uploaded or not uploaded.filename:
+        return jsonify({"ok": False, "error": "No file in restore request."}), 400
+    if not _allowed_file(uploaded.filename):
+        return jsonify({"ok": False, "error": "Unsupported file type."}), 400
+    try:
+        file_bytes = uploaded.read()
+        summary, error_message = _process_upload(file_bytes, uploaded.filename)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Restore failed: {exc}"}), 500
+    return jsonify(
+        {
+            "ok": True,
+            "session_id": session.get("session_id"),
+            "data_revision": summary.get("data_revision"),
+            "filename": uploaded.filename,
+            "error": error_message,
+        }
+    )
+
+
 @app.route("/api/session/reset", methods=["POST"])
 def reset_session():
     """Clear server upload data when the user reloads the page."""

@@ -743,7 +743,20 @@
     clearGapSession();
   }
 
+  async function ensureServerUpload() {
+    if (!window.gapAnalyzerUploadCache) return true;
+    try {
+      return await window.gapAnalyzerUploadCache.ensureServerUpload();
+    } catch (e) {
+      return false;
+    }
+  }
+
   async function loadMeta() {
+    var restored = await ensureServerUpload();
+    if (!restored && !sessionStorage.getItem(META_KEY)) {
+      throw new Error("No upload data. Please upload a file first.");
+    }
     try {
       const res = await fetch("/api/gap-analysis/meta");
       const data = await res.json();
@@ -1196,6 +1209,10 @@
     statusLeft.textContent = "Training MLR on uploaded data…";
 
     try {
+      var restored = await ensureServerUpload();
+      if (!restored) {
+        throw new Error("No upload data. Please upload a file first.");
+      }
       const res = await fetch("/api/gap-analysis/compute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
