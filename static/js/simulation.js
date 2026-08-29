@@ -66,6 +66,8 @@
   let tdBiplotFollowSolve = false;
   let tdBiplotAxisRange = null;
   const SUMMARY_STORAGE_KEY = "gapAnalyzer_sim_summary";
+  const SIM_SNAPSHOT_KEY = "gapAnalyzer_sim_snapshot";
+  const SIM_META_KEY = "gapAnalyzer_sim_meta";
 
   const TD_QUADRANT_THEME = {
     maintain: {
@@ -107,6 +109,63 @@
       scale: 2,
     },
   };
+
+  function loadStoredSnapshot() {
+    try {
+      const raw = sessionStorage.getItem(SIM_SNAPSHOT_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function loadStoredSimMeta() {
+    try {
+      const raw = sessionStorage.getItem(SIM_META_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function snapshotPayload() {
+    const snap = loadStoredSnapshot();
+    return snap ? { snapshot: snap } : {};
+  }
+
+  function mergePayload(extra) {
+    return Object.assign({}, snapshotPayload(), extra || {});
+  }
+
+  function applyMetaFromServer(data) {
+    meta = data;
+    try {
+      sessionStorage.setItem(SIM_META_KEY, JSON.stringify(data));
+    } catch (e) {}
+  }
+
+  async function fetchSimulationMeta() {
+    const snapshot = loadStoredSnapshot();
+    if (snapshot) {
+      const res = await fetch("/api/simulation/meta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ snapshot: snapshot }),
+      });
+      return readJsonResponse(res);
+    }
+    const res = await fetch("/api/simulation/meta");
+    return readJsonResponse(res);
+  }
+
+  function applyMetaFallback() {
+    const cached = loadStoredSimMeta();
+    if (cached && cached.statements && cached.statements.length) {
+      applyMetaFromServer(cached);
+      return true;
+    }
+    return false;
+  }
 
   function persistSummaryState(extra) {
     try {
@@ -1013,7 +1072,7 @@
       const res = await fetch("/api/simulation/predict", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scores: scores }),
+        body: JSON.stringify(mergePayload({ scores: scores })),
       });
       const data = await readJsonResponse(res);
       if (seq !== predictSeq) return;
@@ -1195,7 +1254,7 @@
       const res = await fetch("/api/simulation/export-xlsx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "bottom-up", scores: scores }),
+        body: JSON.stringify(mergePayload({ mode: "bottom-up", scores: scores })),
       });
       await downloadXlsxResponse(res, "simulation_bottom_up.xlsx");
     } catch (err) {
@@ -1226,12 +1285,14 @@
       const res = await fetch("/api/simulation/export-xlsx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "top-down",
-          target_overall: target,
-          option_index: tdOptionIndex,
-          quadrants: getSelectedQuadrants(),
-        }),
+        body: JSON.stringify(
+          mergePayload({
+            mode: "top-down",
+            target_overall: target,
+            option_index: tdOptionIndex,
+            quadrants: getSelectedQuadrants(),
+          })
+        ),
       });
       await downloadXlsxResponse(res, "simulation_top_down.xlsx");
     } catch (err) {
@@ -1910,11 +1971,13 @@
       const res = await fetch("/api/simulation/top-down", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          target_overall: target,
-          option_index: tdOptionIndex,
-          quadrants: quadrants,
-        }),
+        body: JSON.stringify(
+          mergePayload({
+            target_overall: target,
+            option_index: tdOptionIndex,
+            quadrants: quadrants,
+          })
+        ),
       });
       const data = await readJsonResponse(res);
       if (!data.ok) throw new Error(data.error || "Top-down solve failed.");
@@ -2033,9 +2096,25 @@
         return;
       }
 
-      const res = await fetch("/api/simulation/meta");
-      const data = await res.json();
+      const res = await fetchSimulationMeta();
+      const data = res;
       if (!data.ok) {
+        if (applyMetaFallback()) {
+          hideError();
+          if (promptEl) promptEl.hidden = true;
+          setBuExportEnabled(true);
+          initScores();
+          restoreImprovedScoresFromStorage();
+          if (baselineEl && meta.baseline_overall != null) {
+            baselineEl.textContent = formatPct(meta.baseline_overall);
+          }
+          renderStatements();
+          applyModeVisibility();
+          if (simMode === "bottom-up") {
+            await runPredict();
+          }
+          return;
+        }
         if (data.needs_gap_analysis) {
           showPrompt(
             'Run <a href="/gap-analysis">gap analysis</a> first (choose scale and metric) ' +
@@ -2054,6 +2133,9 @@
       }
 
       meta = data;
+      try {
+        sessionStorage.setItem(SIM_META_KEY, JSON.stringify(data));
+      } catch (e) {}
       hideError();
       if (promptEl) promptEl.hidden = true;
       setBuExportEnabled(true);

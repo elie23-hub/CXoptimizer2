@@ -52,6 +52,52 @@ UPLOAD_DIR = _resolve_upload_dir()
 ALLOWED_EXTENSIONS = {".sav", ".xlsx", ".xls", ".csv"}
 
 
+def _snapshot_from_payload(payload: dict | None) -> dict | None:
+    if not payload:
+        return None
+    snap = payload.get("snapshot")
+    return snap if isinstance(snap, dict) else None
+
+
+def _load_snapshot(session_id: str, payload: dict | None = None) -> dict | None:
+    """Load simulation snapshot from disk, or from client payload (serverless fallback)."""
+    snap = load_simulation_json(_simulation_path(session_id))
+    if snap:
+        return snap
+    snap = _snapshot_from_payload(payload)
+    if snap:
+        try:
+            save_simulation_json(_simulation_path(session_id), snap)
+        except OSError:
+            pass
+        return snap
+    return None
+
+
+def _simulation_meta_payload(
+    snapshot: dict[str, Any], summary: dict | None = None
+) -> dict[str, Any]:
+    model = snapshot.get("model") or {}
+    return {
+        "ok": True,
+        "filename": snapshot.get("filename")
+        or (summary.get("filename") if summary else "")
+        or session.get("filename", ""),
+        "scale": snapshot.get("scale"),
+        "metric": snapshot.get("metric"),
+        "metric_label": snapshot.get("metric_label"),
+        "baseline_overall": snapshot.get("baseline_overall"),
+        "statements": snapshot.get("statements", []),
+        "biplot": build_biplot_points(snapshot),
+        "model": model,
+        "respondents": model.get("n_respondents")
+        or (summary.get("kept_rows") if summary else None),
+        "kept_rows": summary.get("kept_rows") if summary else None,
+        "raw_rows": summary.get("raw_rows") if summary else None,
+        "api_version": "sim-v1",
+    }
+
+
 def _allowed_file(filename: str) -> bool:
     return Path(filename).suffix.lower() in ALLOWED_EXTENSIONS
 
@@ -110,6 +156,17 @@ def _require_upload():
     if not _has_upload_session():
         return None, (jsonify({"ok": False, "error": "No upload data. Please upload a file first."}), 400)
     return session["session_id"], None
+
+
+def _session_id_or_error():
+    """Session cookie id only (for serverless routes that accept client snapshot)."""
+    session_id = session.get("session_id")
+    if not session_id:
+        return None, (
+            jsonify({"ok": False, "error": "No upload session. Please upload a file first."}),
+            400,
+        )
+    return session_id, None
 
 
 def _validate_metric_scale(scale: str, metric: str) -> str | None:
@@ -283,6 +340,8 @@ def api_upload():
                 "ok": True,
                 "success": summary.get("success", False),
                 "filename": uploaded.filename,
+                "session_id": session.get("session_id"),
+                "data_revision": summary.get("data_revision"),
                 "error": error_message,
                 "html": html,
             }
@@ -355,8 +414,6 @@ def clear_upload():
 
 @app.route("/gap-analysis")
 def gap_analysis_page():
-    if not _has_upload_session():
-        return redirect(url_for("upload_page"))
     return render_template(
         "gap_analysis.html",
         active_page="gap",
@@ -473,6 +530,8 @@ def gap_analysis_compute():
     )
     save_simulation_json(_simulation_path(session_id), snapshot)
     result["simulation_ready"] = True
+    result["simulation_snapshot"] = snapshot
+    result["simulation_meta"] = _simulation_meta_payload(snapshot, summary)
 
     return jsonify({"ok": True, **result})
 
@@ -540,22 +599,12 @@ def gap_analysis_export_xlsx():
 
 @app.route("/api/simulation/export-xlsx", methods=["POST"])
 def simulation_export_xlsx():
-    session_id, err = _require_upload()
+    payload = request.get_json(silent=True) or {}
+    session_id, snapshot, err = _simulation_session_and_snapshot(payload)
     if err:
         return err
 
-    snapshot = load_simulation_json(_simulation_path(session_id))
-    if not snapshot:
-        return jsonify(
-            {
-                "ok": False,
-                "error": "Run gap analysis first to generate simulation data.",
-                "needs_gap_analysis": True,
-            }
-        ), 400
-
-    summary = _load_summary(session_id)
-    payload = request.get_json(silent=True) or {}
+    summary = _load_summary(session_id) if session_id else None
     mode = str(payload.get("mode") or "bottom-up").strip().lower()
 
     try:
@@ -659,8 +708,6 @@ def _export_filename(summary: dict | None) -> str:
 
 @app.route("/simulation")
 def simulation_page():
-    if not _has_upload_session():
-        return redirect(url_for("upload_page"))
     return render_template(
         "simulation.html",
         active_page="simulation",
@@ -668,66 +715,52 @@ def simulation_page():
     )
 
 
-@app.route("/api/simulation/meta")
+def _simulation_session_and_snapshot(
+    payload: dict | None,
+) -> tuple[str | None, dict | None, tuple | None]:
+    """Resolve session id + simulation snapshot (disk or client payload)."""
+    payload = payload or {}
+    session_id, err = _session_id_or_error()
+    if err and not _snapshot_from_payload(payload):
+        return None, None, err
+    if not session_id:
+        session["session_id"] = str(uuid.uuid4())
+        session.modified = True
+        session_id = session["session_id"]
+
+    snapshot = _load_snapshot(session_id, payload)
+    if not snapshot:
+        return session_id, None, (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "Run gap analysis first to generate simulation data.",
+                    "needs_gap_analysis": True,
+                }
+            ),
+            400,
+        )
+    return session_id, snapshot, None
+
+
+@app.route("/api/simulation/meta", methods=["GET", "POST"])
 def simulation_meta():
-    session_id, err = _require_upload()
+    payload = request.get_json(silent=True) if request.method == "POST" else {}
+    _sid, snapshot, err = _simulation_session_and_snapshot(payload)
     if err:
         return err
 
-    snapshot = load_simulation_json(_simulation_path(session_id))
-    if not snapshot:
-        return jsonify(
-            {
-                "ok": False,
-                "error": (
-                    "No simulation data yet. Run gap analysis first "
-                    "(choose scale and metric) to build the statement performance file."
-                ),
-                "needs_gap_analysis": True,
-            }
-        ), 400
-
-    summary = _load_summary(session_id)
-    model = snapshot.get("model") or {}
-    return jsonify(
-        {
-            "ok": True,
-            "filename": snapshot.get("filename")
-            or (summary.get("filename") if summary else "")
-            or session.get("filename", ""),
-            "scale": snapshot.get("scale"),
-            "metric": snapshot.get("metric"),
-            "metric_label": snapshot.get("metric_label"),
-            "baseline_overall": snapshot.get("baseline_overall"),
-            "statements": snapshot.get("statements", []),
-            "biplot": build_biplot_points(snapshot),
-            "model": model,
-            "respondents": model.get("n_respondents")
-            or (summary.get("kept_rows") if summary else None),
-            "kept_rows": summary.get("kept_rows") if summary else None,
-            "raw_rows": summary.get("raw_rows") if summary else None,
-            "api_version": "sim-v1",
-        }
-    )
+    summary = _load_summary(_sid) if _sid else None
+    return jsonify(_simulation_meta_payload(snapshot, summary))
 
 
 @app.route("/api/simulation/predict", methods=["POST"])
 def simulation_predict():
-    session_id, err = _require_upload()
+    payload = request.get_json(silent=True) or {}
+    _sid, snapshot, err = _simulation_session_and_snapshot(payload)
     if err:
         return err
 
-    snapshot = load_simulation_json(_simulation_path(session_id))
-    if not snapshot:
-        return jsonify(
-            {
-                "ok": False,
-                "error": "Run gap analysis first to generate simulation data.",
-                "needs_gap_analysis": True,
-            }
-        ), 400
-
-    payload = request.get_json(silent=True) or {}
     scores = payload.get("scores") or {}
     if not isinstance(scores, dict):
         return jsonify({"ok": False, "error": "Invalid scores payload."}), 400
@@ -742,21 +775,11 @@ def simulation_predict():
 
 @app.route("/api/simulation/top-down", methods=["POST"])
 def simulation_top_down():
-    session_id, err = _require_upload()
+    payload = request.get_json(silent=True) or {}
+    _sid, snapshot, err = _simulation_session_and_snapshot(payload)
     if err:
         return err
 
-    snapshot = load_simulation_json(_simulation_path(session_id))
-    if not snapshot:
-        return jsonify(
-            {
-                "ok": False,
-                "error": "Run gap analysis first to generate simulation data.",
-                "needs_gap_analysis": True,
-            }
-        ), 400
-
-    payload = request.get_json(silent=True) or {}
     try:
         target = float(payload.get("target_overall"))
     except (TypeError, ValueError):
@@ -789,21 +812,11 @@ def simulation_top_down():
 
 @app.route("/api/simulation/optimal", methods=["POST"])
 def simulation_optimal():
-    session_id, err = _require_upload()
+    payload = request.get_json(silent=True) or {}
+    _sid, snapshot, err = _simulation_session_and_snapshot(payload)
     if err:
         return err
 
-    snapshot = load_simulation_json(_simulation_path(session_id))
-    if not snapshot:
-        return jsonify(
-            {
-                "ok": False,
-                "error": "Run gap analysis first to generate simulation data.",
-                "needs_gap_analysis": True,
-            }
-        ), 400
-
-    payload = request.get_json(silent=True) or {}
     try:
         target = float(payload.get("target_overall"))
     except (TypeError, ValueError):
@@ -821,21 +834,10 @@ def simulation_optimal():
 
 @app.route("/api/simulation/summary", methods=["POST"])
 def simulation_summary():
-    session_id, err = _require_upload()
+    payload = request.get_json(silent=True) or {}
+    _sid, snapshot, err = _simulation_session_and_snapshot(payload)
     if err:
         return err
-
-    snapshot = load_simulation_json(_simulation_path(session_id))
-    if not snapshot:
-        return jsonify(
-            {
-                "ok": False,
-                "error": "Run gap analysis first to generate simulation data.",
-                "needs_gap_analysis": True,
-            }
-        ), 400
-
-    payload = request.get_json(silent=True) or {}
     try:
         if payload.get("target_overall") is not None:
             target = float(payload.get("target_overall"))
@@ -866,8 +868,6 @@ def simulation_summary():
 
 @app.route("/summary")
 def summary_page():
-    if not _has_upload_session():
-        return redirect(url_for("upload_page"))
     return render_template(
         "summary.html",
         active_page="summary",

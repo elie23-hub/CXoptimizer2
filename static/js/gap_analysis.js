@@ -5,6 +5,9 @@
 
 (function () {
   const STORAGE_KEY = "gapAnalyzer_gap_session";
+  const META_KEY = "gapAnalyzer_gap_meta";
+  const SIM_SNAPSHOT_KEY = "gapAnalyzer_sim_snapshot";
+  const SIM_META_KEY = "gapAnalyzer_sim_meta";
 
   const scaleSelect = document.getElementById("gap-scale");
   const metricSelect = document.getElementById("gap-metric");
@@ -741,23 +744,54 @@
   }
 
   async function loadMeta() {
-    const res = await fetch("/api/gap-analysis/meta");
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "Could not load upload metadata.");
-    meta = data;
+    try {
+      const res = await fetch("/api/gap-analysis/meta");
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Could not load upload metadata.");
+      meta = data;
+      try {
+        sessionStorage.setItem(META_KEY, JSON.stringify(data));
+      } catch (e) {}
+    } catch (err) {
+      try {
+        const cached = sessionStorage.getItem(META_KEY);
+        if (cached) {
+          meta = JSON.parse(cached);
+        } else {
+          throw err;
+        }
+      } catch (e) {
+        throw err;
+      }
+    }
     if (hasSingularBlock()) {
-      populateScales(data.scales || []);
-      populateSections(data.sections || []);
+      populateScales(meta.scales || []);
+      populateSections(meta.sections || []);
       applySingularBlock();
       return;
     }
-    populateScales(data.scales || []);
-    if (data.detected_scale) {
-      scaleSelect.value = data.detected_scale;
+    populateScales(meta.scales || []);
+    if (meta.detected_scale) {
+      scaleSelect.value = meta.detected_scale;
       updateMetricOptions();
     }
-    populateSections(data.sections || []);
+    populateSections(meta.sections || []);
     sectionSelect.disabled = false;
+  }
+
+  function saveSimulationBridge(data) {
+    if (!data) return;
+    try {
+      if (data.simulation_snapshot) {
+        sessionStorage.setItem(
+          SIM_SNAPSHOT_KEY,
+          JSON.stringify(data.simulation_snapshot)
+        );
+      }
+      if (data.simulation_meta) {
+        sessionStorage.setItem(SIM_META_KEY, JSON.stringify(data.simulation_meta));
+      }
+    } catch (e) {}
   }
 
   function populateScales(scales) {
@@ -1176,6 +1210,7 @@
       resultsEl.hidden = false;
       sectionSelect.value = "all";
       persistFullResults(data);
+      saveSimulationBridge(data);
       setModelBarReady(data.model || {});
       applySectionView();
       resetBiplotView();
