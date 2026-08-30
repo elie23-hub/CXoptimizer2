@@ -434,11 +434,15 @@ def _equal_axis_extent(
 def _style_biplot_axes(chart: ScatterChart) -> None:
     """Axis box lines without numeric tick labels (openpyxl + XML patch)."""
     axis_border = GraphicalProperties(ln=LineProperties(solidFill="C9CED8"))
+    # openpyxl defaults both scatter axes to left — X must be bottom for a visible box.
+    chart.x_axis.axPos = "b"
+    chart.y_axis.axPos = "l"
     for axis in (chart.x_axis, chart.y_axis):
         axis.spPr = axis_border
         axis.majorTickMark = "none"
         axis.minorTickMark = "none"
         axis.tickLblPos = "none"
+        axis.crosses = "autoZero"
 
 
 def _quadrant_marker_color(quadrant: str) -> str:
@@ -689,6 +693,12 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
         '<solidFill><srgbClr val="C9CED8"/></solidFill>'
         "</ln></spPr>"
     )
+    plot_border = (
+        '<spPr><a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'w="9525" cap="flat">'
+        '<a:solidFill><a:srgbClr val="C9CED8"/></a:solidFill>'
+        '<a:prstDash val="solid"/></a:ln></spPr>'
+    )
 
     def patch_axis(match: re.Match[str]) -> str:
         block = match.group(0)
@@ -696,6 +706,26 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
         tag = match.group(2)
         open_tag = f"<{ns}{tag}>"
         close_tag = f"</{ns}{tag}>"
+        if "Performance" in block:
+            block = re.sub(
+                r"<(?:c:)?axPos[^/]*/>",
+                '<axPos val="b"/>',
+                block,
+            )
+            if "axPos" not in block:
+                block = block.replace(
+                    "<scaling>", '<axPos val="b"/><scaling>', 1
+                )
+        elif "Importance" in block:
+            block = re.sub(
+                r"<(?:c:)?axPos[^/]*/>",
+                '<axPos val="l"/>',
+                block,
+            )
+            if "axPos" not in block:
+                block = block.replace(
+                    "<scaling>", '<axPos val="l"/><scaling>', 1
+                )
         block = re.sub(
             r"<(?:c:)?tickLblPos[^/]*/>",
             '<tickLblPos val="none"/>',
@@ -716,12 +746,15 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
             block = block.replace(open_tag, open_tag + axis_line, 1)
         return block
 
-    return re.sub(
+    xml = re.sub(
         r"<(?:(c:)?)(valAx|catAx)>.*?</(?:(c:)?)(?:valAx|catAx)>",
         patch_axis,
         xml,
         flags=re.S,
     )
+    if not re.search(r"</valAx>\s*<spPr>", xml):
+        xml = xml.replace("</plotArea>", plot_border + "</plotArea>", 1)
+    return xml
 
 
 def _patch_chart_xml_hide_legend_keys(xml: str) -> str:
