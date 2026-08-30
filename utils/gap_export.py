@@ -823,8 +823,8 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
         '<w val="0.90"/><h val="0.84"/>'
         "</manualLayout></layout>"
     )
-    if "<layout>" not in xml.split("</plotArea>", 1)[0]:
-        xml = xml.replace("</plotArea>", plot_layout + "</plotArea>", 1)
+    if not re.search(r"<plotArea>\s*<layout>", xml):
+        xml = xml.replace("<plotArea>", f"<plotArea>{plot_layout}", 1)
     xml = re.sub(
         r"<scatterStyle[^/]*/>",
         '<scatterStyle val="lineMarker"/>',
@@ -852,7 +852,7 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
 
     xml = re.sub(r"<ser>.*?</ser>", patch_crosshair_ser, xml, flags=re.S)
 
-    # Outer chart frame only — no inner plot-area border.
+    # Outer chart frame (chartSpace/spPr must follow <chart>, not precede it).
     chart_area_frame = (
         '<spPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
         '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
@@ -860,20 +860,26 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
         f'<a:solidFill><a:srgbClr val="{CHART_OUTER_BORDER}"/></a:solidFill>'
         '<a:prstDash val="solid"/></a:ln></spPr>'
     )
-    if re.search(r"<chartSpace[^>]*>\s*<spPr", xml, flags=re.S):
+    xml = re.sub(
+        r"<chartSpace([^>]*)>\s*<spPr>.*?</spPr>\s*<chart>",
+        r"<chartSpace\1><chart>",
+        xml,
+        count=1,
+        flags=re.S,
+    )
+    if re.search(r"</chart>\s*<spPr", xml, flags=re.S):
         xml = re.sub(
-            r"(<chartSpace[^>]*>)\s*<spPr>.*?</spPr>",
-            r"\1" + chart_area_frame,
+            r"</chart>\s*<spPr>.*?</spPr>\s*(?=</chartSpace>)",
+            f"</chart>{chart_area_frame}",
             xml,
             count=1,
             flags=re.S,
         )
     else:
-        xml = re.sub(
-            r"(<chartSpace[^>]*>)",
-            r"\1" + chart_area_frame,
-            xml,
-            count=1,
+        xml = xml.replace(
+            "</chart></chartSpace>",
+            f"</chart>{chart_area_frame}</chartSpace>",
+            1,
         )
     if "roundedCorners" not in xml:
         xml = xml.replace("<chart>", '<chart><roundedCorners val="1"/>', 1)
