@@ -442,7 +442,6 @@ def _style_biplot_axes(chart: ScatterChart) -> None:
         axis.minorTickMark = "none"
         axis.tickLblPos = "none"
         axis.crosses = "autoZero"
-        axis.crossesAt = 0
         axis.majorGridlines = None
         axis.minorGridlines = None
 
@@ -736,8 +735,7 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
                 close_tag, '<majorTickMark val="none"/>' + close_tag, 1
             )
         block = re.sub(r"<crosses[^/]*/>", '<crosses val="autoZero"/>', block)
-        if "crossesAt" not in block:
-            block = block.replace(close_tag, '<crossesAt val="0"/>' + close_tag, 1)
+        block = re.sub(r"<crossesAt[^/]*/>", "", block)
         block = re.sub(r"<spPr>.*?</spPr>", axis_sppr, block, count=1, flags=re.S)
         if "spPr" not in block:
             block = block.replace(open_tag, open_tag + axis_sppr, 1)
@@ -831,7 +829,7 @@ def _patch_workbook_charts(
                 text = _patch_chart_xml(text, labels)
                 raw = text.encode("utf-8")
                 chart_idx += 1
-            dst.writestr(info, raw)
+            dst.writestr(name, raw, compress_type=zipfile.ZIP_DEFLATED)
     src.close()
     return out.getvalue()
 
