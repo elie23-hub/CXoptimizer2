@@ -67,6 +67,7 @@ CHART_TITLE_CELL = (1, 9)  # I1
 CHART_ANCHOR_CELL = (1, 10)  # J1
 
 # Populated per export request and passed into chart XML post-processing.
+CHART_CROSSHAIR_SERIES = 0
 
 
 def _escape_xml_text(text: str) -> str:
@@ -432,8 +433,8 @@ def _equal_axis_extent(
 
 
 def _style_biplot_axes(chart: ScatterChart) -> None:
-    """X/Y axis lines at zero crossing, no gridlines, no tick numbers (matches VBA)."""
-    axis_line = GraphicalProperties(ln=LineProperties(solidFill="C9CED8", w=12700))
+    """Centre crosshair via axes crossing at z=0 — grey lines, no tick numbers."""
+    axis_line = GraphicalProperties(ln=LineProperties(solidFill="C9CED8", w=9525))
     chart.x_axis.axPos = "b"
     chart.y_axis.axPos = "l"
     for axis in (chart.x_axis, chart.y_axis):
@@ -589,10 +590,14 @@ def _patch_chart_xml_leader_lines(
     def patch_ser(match: re.Match[str]) -> str:
         nonlocal ser_idx
         block = match.group(0)
-        ox, oy = offsets[ser_idx % 4]
+        if ser_idx < CHART_CROSSHAIR_SERIES:
+            ser_idx += 1
+            return block
+        ox, oy = offsets[(ser_idx - CHART_CROSSHAIR_SERIES) % 4]
         formula, text = ("", "")
-        if ser_idx < len(label_cells):
-            formula, text = label_cells[ser_idx]
+        label_idx = ser_idx - CHART_CROSSHAIR_SERIES
+        if label_idx < len(label_cells):
+            formula, text = label_cells[label_idx]
         tx_xml = _label_tx_xml(formula, text) if formula else ""
         ser_idx += 1
 
@@ -683,11 +688,11 @@ def _patch_chart_xml_leader_lines(
 
 
 def _patch_chart_xml_restore_axes(xml: str) -> str:
-    """VBA-style axes: X/Y lines cross at zero, no numbers, no gridlines, no plot border."""
+    """Centre crosshair axes at z=0; no tick numbers; no plot border; no gridlines."""
 
     axis_sppr = (
         '<spPr><a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
-        'w="12700" cap="flat">'
+        'w="9525" cap="flat">'
         '<a:solidFill><a:srgbClr val="C9CED8"/></a:solidFill>'
         '<a:prstDash val="solid"/></a:ln></spPr>'
     )

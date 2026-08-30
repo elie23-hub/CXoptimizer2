@@ -1,12 +1,14 @@
 Option Explicit
 
-' Rebuild section quadrant charts to match the app biplot:
-' - Equal axis dimensions (same +/- extent on X and Y from z-scores)
-' - Origin (0,0) dead-center — not shifted by asymmetric data ranges
-' - Square, centered chart under columns A:H
-' - Markers only (no connecting lines), labels from Label column
-' - Marker + soft quadrant fills by Quadrant column
-' - Title from I1 (section name) or sheet name
+' Quadrant biplot charts (matches reference export):
+' - Equal +/- z scale on X and Y, origin at plot centre
+' - Centre crosshair axes (X/Y cross at z=0), not edge box lines
+' - Axis titles, no tick numbers, no gridlines, no plot border
+' - Markers coloured by Quadrant, labels from Label column + leader lines
+
+Private Const CLR_AXIS As Long = 9843336      ' RGB(201, 206, 216)
+Private Const CLR_TITLE As Long = 7039855     ' RGB(107, 114, 128)
+Private Const CLR_LABEL As Long = 0           ' RGB(0, 0, 0)
 
 Public Sub BuildAllQuadrantCharts()
   Dim ws As Worksheet
@@ -22,7 +24,7 @@ Public Sub BuildOne(ByVal ws As Worksheet)
   Dim co As ChartObject, cht As Chart, ser As Series
   Dim anchorRow As Long, chartTitle As String, lbl As String, q As String
   Dim labelAddr As String
-  Dim extent As Double, v As Double, majorStep As Double
+  Dim extent As Double, v As Double
   Dim chartW As Double, chartH As Double, tableW As Double, leftPos As Double
   Dim plotSide As Double, plotLeft As Double, plotTop As Double
   Dim rgbCol As Long
@@ -50,7 +52,6 @@ Public Sub BuildOne(ByVal ws As Worksheet)
   If zxCol = 0 Then Exit Sub
 
   firstData = hdr + 1
-  ' Skip subtitle / note rows until numeric Z_X values begin
   Do While firstData < hdr + 6
     If IsNumeric(ws.Cells(firstData, zxCol).Value) And _
        CStr(ws.Cells(firstData, zxCol).Value) <> "" Then Exit Do
@@ -72,7 +73,6 @@ Public Sub BuildOne(ByVal ws As Worksheet)
   If IsNumeric(ws.Range("J1").Value) Then anchorRow = CLng(ws.Range("J1").Value)
   If anchorRow <= 0 Then anchorRow = lastRow + 3
 
-  ' Square chart, centered under columns A:H (not left-shifted)
   chartW = 480
   chartH = 480
   tableW = ws.Range("A1:H1").Width
@@ -140,10 +140,9 @@ Public Sub BuildOne(ByVal ws As Worksheet)
       .Position = xlLabelPositionRight
       .Font.Name = "Calibri"
       .Font.Size = 8
-      .Font.Color = RGB(0, 0, 0)
+      .Font.Color = CLR_LABEL
     End With
 
-    ' Prefer Value-From-Cells (Label column); fall back to per-point text
     labelAddr = "='" & Replace(ws.Name, "'", "''") & "'!" & _
                 ws.Range(ws.Cells(firstData, labelCol), ws.Cells(lastRow, labelCol)).Address(True, True)
     On Error Resume Next
@@ -159,8 +158,6 @@ Public Sub BuildOne(ByVal ws As Worksheet)
     End If
     On Error GoTo 0
 
-    ' Excel only draws scatter leader lines when labels are moved off the marker.
-    ' Offset each label so a connector line appears from point -> label.
     For pt = 1 To .Points.Count
       On Error Resume Next
       With .Points(pt).DataLabel
@@ -196,11 +193,25 @@ Public Sub BuildOne(ByVal ws As Worksheet)
     .Font.Name = "Calibri"
     .Font.Size = 14
     .Font.Bold = True
-    .Font.Color = RGB(0, 0, 0)
+    .Font.Color = CLR_LABEL
   End With
   cht.HasLegend = False
 
-  ' Same half-extent on X and Y: Max(|z| + 0.45, 2.5) — origin stays centered
+  extent = CalcExtent(ws, firstData, lastRow, zxCol, zyCol)
+  Call ApplyBiplotAxes(cht, extent)
+  Call SquarePlotArea(cht)
+End Sub
+
+Private Function CalcExtent( _
+    ByVal ws As Worksheet, _
+    ByVal firstData As Long, _
+    ByVal lastRow As Long, _
+    ByVal zxCol As Long, _
+    ByVal zyCol As Long) As Double
+  Dim r As Long
+  Dim v As Double
+  Dim extent As Double
+
   extent = 2.5
   For r = firstData To lastRow
     If IsNumeric(ws.Cells(r, zxCol).Value) Then
@@ -212,26 +223,30 @@ Public Sub BuildOne(ByVal ws As Worksheet)
       If v > extent Then extent = v
     End If
   Next r
-  majorStep = Application.WorksheetFunction.Round(extent / 5#, 2)
-  If majorStep <= 0 Then majorStep = 0.5
+  CalcExtent = extent
+End Function
 
+Private Sub ApplyBiplotAxes(ByVal cht As Chart, ByVal extent As Double)
+  ' Axes cross at z=0 => horizontal + vertical centre crosshair (not edge box lines).
   With cht.Axes(xlCategory)
     .HasTitle = True
     .AxisTitle.Text = "Performance (z)"
+    .AxisTitle.Font.Name = "Calibri"
     .AxisTitle.Font.Size = 10
-    .AxisTitle.Font.Color = RGB(107, 114, 128)
+    .AxisTitle.Font.Color = CLR_TITLE
     .MinimumScale = -extent
     .MaximumScale = extent
-    .MajorUnit = majorStep
-    .MinorUnit = majorStep / 2#
     .Crosses = xlAxisCrossesCustom
     .CrossesAt = 0
     .TickLabelPosition = xlTickLabelPositionNone
-    .TickLabels.Font.Size = 9
-    .TickLabels.Font.Color = RGB(156, 163, 175)
-    .Border.Color = RGB(201, 206, 216)
-    .Border.Weight = xlHairline
+    .MajorTickMark = xlTickMarkNone
+    .MinorTickMark = xlTickMarkNone
     On Error Resume Next
+    .Format.Line.Visible = msoTrue
+    .Format.Line.ForeColor.RGB = CLR_AXIS
+    .Format.Line.Weight = 0.75
+    .Border.LineStyle = xlContinuous
+    .Border.Color = CLR_AXIS
     .HasMajorGridlines = False
     .HasMinorGridlines = False
     .MajorGridlines.Delete
@@ -242,30 +257,38 @@ Public Sub BuildOne(ByVal ws As Worksheet)
   With cht.Axes(xlValue)
     .HasTitle = True
     .AxisTitle.Text = "Importance (z)"
+    .AxisTitle.Font.Name = "Calibri"
     .AxisTitle.Font.Size = 10
-    .AxisTitle.Font.Color = RGB(107, 114, 128)
+    .AxisTitle.Font.Color = CLR_TITLE
     .MinimumScale = -extent
     .MaximumScale = extent
-    .MajorUnit = majorStep
-    .MinorUnit = majorStep / 2#
     .Crosses = xlAxisCrossesCustom
     .CrossesAt = 0
     .TickLabelPosition = xlTickLabelPositionNone
-    .TickLabels.Font.Size = 9
-    .TickLabels.Font.Color = RGB(156, 163, 175)
-    .Border.Color = RGB(201, 206, 216)
-    .Border.Weight = xlHairline
+    .MajorTickMark = xlTickMarkNone
+    .MinorTickMark = xlTickMarkNone
     On Error Resume Next
+    .Format.Line.Visible = msoTrue
+    .Format.Line.ForeColor.RGB = CLR_AXIS
+    .Format.Line.Weight = 0.75
+    .Border.LineStyle = xlContinuous
+    .Border.Color = CLR_AXIS
     .HasMajorGridlines = False
     .HasMinorGridlines = False
     .MajorGridlines.Delete
     .MinorGridlines.Delete
     On Error GoTo 0
   End With
+End Sub
 
-  ' Force a square plot area centered in the chart (equal visual quadrants)
+Private Sub SquarePlotArea(ByVal cht As Chart)
+  Dim plotSide As Double
+  Dim plotLeft As Double
+  Dim plotTop As Double
+
   On Error Resume Next
   cht.ChartArea.Format.Fill.ForeColor.RGB = RGB(255, 255, 255)
+  cht.ChartArea.Format.Line.Visible = msoFalse
   plotSide = Application.WorksheetFunction.Min(cht.PlotArea.Width, cht.PlotArea.Height) * 0.92
   plotLeft = (cht.ChartArea.Width - plotSide) / 2#
   plotTop = cht.PlotArea.Top
@@ -277,74 +300,6 @@ Public Sub BuildOne(ByVal ws As Worksheet)
   cht.PlotArea.Top = plotTop
   cht.PlotArea.Format.Fill.ForeColor.RGB = RGB(255, 255, 255)
   cht.PlotArea.Format.Line.Visible = msoFalse
-  cht.ChartArea.Format.Line.Visible = msoFalse
-  On Error GoTo 0
-
-  Call AddQuadrantFills(cht)
-End Sub
-
-Private Sub AddQuadrantFills(ByVal cht As Chart)
-  Dim pl As Double, pt As Double, pw As Double, ph As Double
-  Dim sh As Shape
-  Dim i As Long
-
-  On Error Resume Next
-  For i = cht.Shapes.Count To 1 Step -1
-    If Left$(cht.Shapes(i).Name, 3) = "Q_" Then cht.Shapes(i).Delete
-  Next i
-
-  pl = cht.PlotArea.InsideLeft
-  pt = cht.PlotArea.InsideTop
-  pw = cht.PlotArea.InsideWidth
-  ph = cht.PlotArea.InsideHeight
-  If pw <= 0 Or ph <= 0 Then Exit Sub
-
-  Set sh = cht.Shapes.AddShape(msoShapeRectangle, pl, pt, pw / 2, ph / 2)
-  sh.Name = "Q_Urgent"
-  sh.Fill.ForeColor.RGB = RGB(244, 204, 204)
-  sh.Fill.Transparency = 0.35
-  sh.Line.Visible = msoFalse
-  sh.ZOrder msoSendToBack
-
-  Set sh = cht.Shapes.AddShape(msoShapeRectangle, pl + pw / 2, pt, pw / 2, ph / 2)
-  sh.Name = "Q_Maintain"
-  sh.Fill.ForeColor.RGB = RGB(217, 234, 211)
-  sh.Fill.Transparency = 0.35
-  sh.Line.Visible = msoFalse
-  sh.ZOrder msoSendToBack
-
-  Set sh = cht.Shapes.AddShape(msoShapeRectangle, pl, pt + ph / 2, pw / 2, ph / 2)
-  sh.Name = "Q_Low"
-  sh.Fill.ForeColor.RGB = RGB(255, 242, 204)
-  sh.Fill.Transparency = 0.25
-  sh.Line.Visible = msoFalse
-  sh.ZOrder msoSendToBack
-
-  Set sh = cht.Shapes.AddShape(msoShapeRectangle, pl + pw / 2, pt + ph / 2, pw / 2, ph / 2)
-  sh.Name = "Q_Overkill"
-  sh.Fill.ForeColor.RGB = RGB(207, 226, 243)
-  sh.Fill.Transparency = 0.35
-  sh.Line.Visible = msoFalse
-  sh.ZOrder msoSendToBack
-
-  Call AddCornerLabel(cht, "Q_L_Urgent", "Low performance high importance", pl + 4, pt + 4, RGB(122, 16, 16))
-  Call AddCornerLabel(cht, "Q_L_Maintain", "High performance high importance", pl + pw / 2 + 4, pt + 4, RGB(45, 90, 26))
-  Call AddCornerLabel(cht, "Q_L_Low", "Low performance low importance", pl + 4, pt + ph / 2 + 4, RGB(138, 104, 0))
-  Call AddCornerLabel(cht, "Q_L_Overkill", "High performance low importance", pl + pw / 2 + 4, pt + ph / 2 + 4, RGB(13, 63, 150))
-  On Error GoTo 0
-End Sub
-
-Private Sub AddCornerLabel(ByVal cht As Chart, ByVal nm As String, ByVal txt As String, _
-                           ByVal leftPos As Double, ByVal topPos As Double, ByVal fontRgb As Long)
-  Dim tb As Shape
-  On Error Resume Next
-  Set tb = cht.Shapes.AddTextbox(msoTextOrientationHorizontal, leftPos, topPos, 170, 28)
-  tb.Name = nm
-  tb.Fill.Visible = msoFalse
-  tb.Line.Visible = msoFalse
-  tb.TextFrame.Characters.Text = txt
-  tb.TextFrame.Characters.Font.Size = 8
-  tb.TextFrame.Characters.Font.Bold = True
-  tb.TextFrame.Characters.Font.Color = fontRgb
+  cht.PlotArea.Border.LineStyle = xlLineStyleNone
   On Error GoTo 0
 End Sub
