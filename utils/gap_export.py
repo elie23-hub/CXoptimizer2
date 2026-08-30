@@ -70,8 +70,8 @@ CHART_ANCHOR_CELL = (1, 10)  # J1
 # Populated per export request and passed into chart XML post-processing.
 CHART_CROSSHAIR_SERIES = 2
 BI_PLOT_AXIS_GREY = "C9CED8"
-# Crosshair stops short of plot border (fraction of axis span per side).
-CROSSHAIR_INSET_FRAC = 0.11
+# Crosshair stops short of plot edge (fraction of axis span per side).
+CROSSHAIR_INSET_FRAC = 0.05
 
 
 def _escape_xml_text(text: str) -> str:
@@ -743,9 +743,7 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
     plot_fill = (
         '<spPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
         '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
-        "<a:ln w=\"9525\" cap=\"flat\">"
-        f'<a:solidFill><a:srgbClr val="{BI_PLOT_AXIS_GREY}"/></a:solidFill>'
-        '<a:prstDash val="solid"/></a:ln></spPr>'
+        "<a:ln><a:noFill/></a:ln></spPr>"
     )
 
     def patch_axis(match: re.Match[str]) -> str:
@@ -820,8 +818,8 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
         "<layout><manualLayout>"
         '<layoutTarget val="inner"/>'
         '<xMode val="edge"/><yMode val="edge"/>'
-        '<x val="0.07"/><y val="0.10"/>'
-        '<w val="0.86"/><h val="0.78"/>'
+        '<x val="0.05"/><y val="0.06"/>'
+        '<w val="0.90"/><h val="0.84"/>'
         "</manualLayout></layout>"
     )
     if "<layout>" not in xml.split("</plotArea>", 1)[0]:
@@ -852,6 +850,28 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
         return block
 
     xml = re.sub(r"<ser>.*?</ser>", patch_crosshair_ser, xml, flags=re.S)
+
+    # No outer chart-area frame (Excel default rounded border).
+    chart_area_fill = (
+        '<spPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
+        "<a:ln><a:noFill/></a:ln></spPr>"
+    )
+    if re.search(r"<chartSpace[^>]*>\s*<spPr", xml, flags=re.S):
+        xml = re.sub(
+            r"(<chartSpace[^>]*>)\s*<spPr>.*?</spPr>",
+            r"\1" + chart_area_fill,
+            xml,
+            count=1,
+            flags=re.S,
+        )
+    else:
+        xml = re.sub(
+            r"(<chartSpace[^>]*>)",
+            r"\1" + chart_area_fill,
+            xml,
+            count=1,
+        )
     return xml
 
 
