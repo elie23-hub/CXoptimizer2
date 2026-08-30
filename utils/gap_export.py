@@ -598,23 +598,24 @@ def _add_openpyxl_chart(
     return label_batch
 
 
-def _inject_dLbl_layout(dLbl_xml: str, ox: float, oy: float) -> str:
-    """Insert manualLayout into a <dLbl>…</dLbl> block if missing."""
-    if "<layout>" in dLbl_xml or "<c:layout>" in dLbl_xml:
-        return dLbl_xml
+def _build_dLbl_xml(
+    idx: int, tx_xml: str, ox: float, oy: float
+) -> str:
+    """Build a schema-valid dLbl block (idx → layout → tx → dLblPos → show*)."""
     layout = (
-        f"<layout><manualLayout>"
+        "<layout><manualLayout>"
         f'<xMode val="factor"/><yMode val="factor"/>'
         f'<x val="{ox:.4f}"/><y val="{oy:.4f}"/>'
-        f"</manualLayout></layout>"
+        "</manualLayout></layout>"
     )
-    # Place layout right after <dLbl>…<idx …/>
-    return re.sub(
-        r"(<dLbl>\s*<idx[^/]*/>)",
-        r"\1" + layout,
-        dLbl_xml,
-        count=1,
-        flags=re.I,
+    return (
+        f'<dLbl><idx val="{idx}"/>'
+        f"{layout}"
+        f"{tx_xml}"
+        f'<dLblPos val="r"/>'
+        f'<showLegendKey val="0"/><showVal val="0"/>'
+        f'<showCatName val="0"/><showSerName val="0"/>'
+        f"</dLbl>"
     )
 
 
@@ -679,32 +680,14 @@ def _patch_chart_xml_leader_lines(
             if re.search(r"<dLbl[\s>]", dlbls):
                 def patch_point_lbl(mm: re.Match[str]) -> str:
                     dlbl = mm.group(0)
+                    idx_m = re.search(r'<idx val="(\d+)"/>', dlbl)
+                    idx = int(idx_m.group(1)) if idx_m else 0
                     if tx_xml and "<tx>" not in dlbl:
-                        dlbl = re.sub(
-                            r"(<dLbl>\s*<idx[^/]*/>)",
-                            r"\1" + tx_xml,
-                            dlbl,
-                            count=1,
-                            flags=re.I,
-                        )
-                    dlbl = re.sub(
-                        r"<showSerName[^/]*/>",
-                        '<showSerName val="0"/>',
-                        dlbl,
-                    )
-                    dlbl = re.sub(
-                        r"<showLegendKey[^/]*/>",
-                        '<showLegendKey val="0"/>',
-                        dlbl,
-                    )
-                    if "showSerName" not in dlbl:
-                        dlbl = dlbl.replace("</dLbl>", '<showSerName val="0"/></dLbl>')
-                    if "showLegendKey" not in dlbl:
-                        dlbl = dlbl.replace(
-                            "</dLbl>", '<showLegendKey val="0"/></dLbl>'
-                        )
-                    dlbl = re.sub(r"<showLeaderLines[^/]*/>", "", dlbl)
-                    return _inject_dLbl_layout(dlbl, ox, oy)
+                        use_tx = tx_xml
+                    else:
+                        tx_m = re.search(r"<tx>.*?</tx>", dlbl, re.S)
+                        use_tx = tx_m.group(0) if tx_m else ""
+                    return _build_dLbl_xml(idx, use_tx, ox, oy)
 
                 dlbls = re.sub(
                     r"<dLbl>.*?</dLbl>",
@@ -713,18 +696,7 @@ def _patch_chart_xml_leader_lines(
                     flags=re.S,
                 )
             else:
-                injected = (
-                    f'<dLbl><idx val="0"/>'
-                    f"{tx_xml}"
-                    f"<layout><manualLayout>"
-                    f'<xMode val="factor"/><yMode val="factor"/>'
-                    f'<x val="{ox:.4f}"/><y val="{oy:.4f}"/>'
-                    f"</manualLayout></layout>"
-                    f'<dLblPos val="r"/>'
-                    f'<showSerName val="0"/><showVal val="0"/>'
-                    f'<showLegendKey val="0"/>'
-                    f"</dLbl>"
-                )
+                injected = _build_dLbl_xml(0, tx_xml, ox, oy)
                 dlbls = dlbls.replace("<dLbls>", f"<dLbls>{injected}", 1)
             return dlbls
 
@@ -851,43 +823,18 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
 
     xml = re.sub(r"<ser>.*?</ser>", patch_crosshair_ser, xml, flags=re.S)
 
-    # Outer chart frame (chartSpace/spPr must follow <chart>, not precede it).
-    chart_area_frame = (
-        '<spPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
-        '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
-        '<a:ln w="12700" cap="flat" cmpd="sng">'
-        f'<a:solidFill><a:srgbClr val="{CHART_OUTER_BORDER}"/></a:solidFill>'
-        '<a:prstDash val="solid"/></a:ln></spPr>'
-    )
-    xml = re.sub(
-        r"<chartSpace([^>]*)>\s*<spPr>.*?</spPr>\s*<chart>",
-        r"<chartSpace\1><chart>",
-        xml,
-        count=1,
-        flags=re.S,
-    )
-    if re.search(r"</chart>\s*<spPr", xml, flags=re.S):
-        xml = re.sub(
-            r"</chart>\s*<spPr>.*?</spPr>\s*(?=</chartSpace>)",
-            f"</chart>{chart_area_frame}",
-            xml,
-            count=1,
-            flags=re.S,
+    # Outer chart frame via chartSpace/spPr (must follow </chart>).
+    if "</chart></chartSpace>" in xml and not re.search(
+        r"</chart>\s*<spPr", xml, flags=re.S
+    ):
+        frame = (
+            '<spPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
+            '<a:ln w="12700">'
+            f'<a:solidFill><a:srgbClr val="{CHART_OUTER_BORDER}"/></a:solidFill>'
+            "</a:ln></spPr>"
         )
-    else:
-        xml = xml.replace(
-            "</chart></chartSpace>",
-            f"</chart>{chart_area_frame}</chartSpace>",
-            1,
-        )
-    if "roundedCorners" not in xml:
-        xml = xml.replace("<chart>", '<chart><roundedCorners val="1"/>', 1)
-    else:
-        xml = re.sub(
-            r"<roundedCorners[^/]*/>",
-            '<roundedCorners val="1"/>',
-            xml,
-        )
+        xml = xml.replace("</chart></chartSpace>", f"</chart>{frame}</chartSpace>", 1)
     return xml
 
 
