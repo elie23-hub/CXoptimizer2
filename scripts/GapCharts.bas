@@ -276,6 +276,8 @@ Public Sub BuildOne(ByVal ws As Worksheet)
   cht.PlotArea.Left = plotLeft
   cht.PlotArea.Top = plotTop
   cht.PlotArea.Format.Fill.ForeColor.RGB = RGB(255, 255, 255)
+  cht.PlotArea.Format.Line.Visible = msoFalse
+  cht.ChartArea.Format.Line.Visible = msoFalse
   On Error GoTo 0
 
   Call AddQuadrantFills(cht)
