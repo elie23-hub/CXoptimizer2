@@ -2,8 +2,9 @@
 Build a styled gap-analysis Excel workbook (results tables + quadrant charts).
 
 Charts are real Excel chart objects bound to Z_X / Z_Y / Label ranges (not pictures).
-Style matches the reference biplot: section title, blue markers, statement labels,
-Performance (z) / Importance (z) axes, crosshairs at zero, no legend.
+Style matches the reference biplot: section title, quadrant marker colors, statement
+labels with leader lines, Performance (z) / Importance (z) titles, centre crosshair
+and plot border, no tick numbers, no legend.
 """
 
 from __future__ import annotations
@@ -67,7 +68,8 @@ CHART_TITLE_CELL = (1, 9)  # I1
 CHART_ANCHOR_CELL = (1, 10)  # J1
 
 # Populated per export request and passed into chart XML post-processing.
-CHART_CROSSHAIR_SERIES = 0
+CHART_CROSSHAIR_SERIES = 2
+BI_PLOT_AXIS_GREY = "C9CED8"
 
 
 def _escape_xml_text(text: str) -> str:
@@ -433,18 +435,49 @@ def _equal_axis_extent(
 
 
 def _style_biplot_axes(chart: ScatterChart) -> None:
-    """Centre crosshair via axes crossing at z=0 — grey lines, no tick numbers."""
-    axis_line = GraphicalProperties(ln=LineProperties(solidFill="C9CED8", w=9525))
+    """Scale/titles only — centre crosshair + outer box drawn as line series."""
+    axis_hidden = GraphicalProperties(ln=LineProperties(noFill=True))
     chart.x_axis.axPos = "b"
     chart.y_axis.axPos = "l"
     for axis in (chart.x_axis, chart.y_axis):
-        axis.spPr = axis_line
+        axis.spPr = axis_hidden
         axis.majorTickMark = "none"
         axis.minorTickMark = "none"
         axis.tickLblPos = "none"
         axis.crosses = "autoZero"
         axis.majorGridlines = None
         axis.minorGridlines = None
+
+
+def _crosshair_line_series(
+    ws: Worksheet, row_a: int, row_b: int, *, title: str
+) -> Series:
+    xvalues = Reference(ws, min_col=CHART_Z_COL, min_row=row_a, max_row=row_b)
+    yvalues = Reference(ws, min_col=CHART_Z_COL + 1, min_row=row_a, max_row=row_b)
+    series = Series(yvalues, xvalues, title=title)
+    series.graphicalProperties = GraphicalProperties(
+        ln=LineProperties(solidFill=BI_PLOT_AXIS_GREY, w=9525)
+    )
+    series.marker = Marker(symbol="none")
+    return series
+
+
+def _write_crosshair_source(
+    ws: Worksheet, last_row: int, axis_min: float, axis_max: float
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Scratch Z rows for centre horizontal + vertical crosshair lines."""
+    base = last_row + 2  # last_row+1 is merged range note
+    h1, h2 = base, base + 1
+    v1, v2 = base + 2, base + 3
+    ws.cell(row=h1, column=CHART_Z_COL, value=axis_min)
+    ws.cell(row=h1, column=CHART_Z_COL + 1, value=0)
+    ws.cell(row=h2, column=CHART_Z_COL, value=axis_max)
+    ws.cell(row=h2, column=CHART_Z_COL + 1, value=0)
+    ws.cell(row=v1, column=CHART_Z_COL, value=0)
+    ws.cell(row=v1, column=CHART_Z_COL + 1, value=axis_min)
+    ws.cell(row=v2, column=CHART_Z_COL, value=0)
+    ws.cell(row=v2, column=CHART_Z_COL + 1, value=axis_max)
+    return (h1, h2), (v1, v2)
 
 
 def _quadrant_marker_color(quadrant: str) -> str:
@@ -477,7 +510,8 @@ def _add_openpyxl_chart(
 
     chart = ScatterChart()
     chart.title = chart_title
-    chart.scatterStyle = "marker"
+    # lineMarker so crosshair/box line series render; data series stay marker-only
+    chart.scatterStyle = "lineMarker"
     chart.x_axis.title = "Performance (z)"
     chart.y_axis.title = "Importance (z)"
     # Same +/- extent on both axes so (0,0) is centered (not shifted)
@@ -493,6 +527,9 @@ def _add_openpyxl_chart(
     chart.y_axis.majorUnit = major
     _style_biplot_axes(chart)
     chart.legend = None
+    h_rows, v_rows = _write_crosshair_source(ws, last, axis_min, axis_max)
+    chart.series.append(_crosshair_line_series(ws, h_rows[0], h_rows[1], title="_cross_h"))
+    chart.series.append(_crosshair_line_series(ws, v_rows[0], v_rows[1], title="_cross_v"))
     # Square chart object => equal visual quadrant sizes
     chart_size_cm = 16.0
     chart.height = chart_size_cm
@@ -688,12 +725,17 @@ def _patch_chart_xml_leader_lines(
 
 
 def _patch_chart_xml_restore_axes(xml: str) -> str:
-    """Centre crosshair axes at z=0; no tick numbers; no plot border; no gridlines."""
+    """Hide edge axes; white plot; no tick numbers; no gridlines."""
 
-    axis_sppr = (
-        '<spPr><a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
-        'w="9525" cap="flat">'
-        '<a:solidFill><a:srgbClr val="C9CED8"/></a:solidFill>'
+    axis_hidden = (
+        '<spPr><a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        "<a:noFill/></a:ln></spPr>"
+    )
+    plot_fill = (
+        '<spPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
+        "<a:ln w=\"9525\" cap=\"flat\">"
+        f'<a:solidFill><a:srgbClr val="{BI_PLOT_AXIS_GREY}"/></a:solidFill>'
         '<a:prstDash val="solid"/></a:ln></spPr>'
     )
 
@@ -741,9 +783,9 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
             )
         block = re.sub(r"<crosses[^/]*/>", '<crosses val="autoZero"/>', block)
         block = re.sub(r"<crossesAt[^/]*/>", "", block)
-        block = re.sub(r"<spPr>.*?</spPr>", axis_sppr, block, count=1, flags=re.S)
+        block = re.sub(r"<spPr>.*?</spPr>", axis_hidden, block, count=1, flags=re.S)
         if "spPr" not in block:
-            block = block.replace(open_tag, open_tag + axis_sppr, 1)
+            block = block.replace(open_tag, open_tag + axis_hidden, 1)
         block = re.sub(r"<majorGridlines>.*?</majorGridlines>", "", block, flags=re.S)
         block = re.sub(r"<minorGridlines>.*?</minorGridlines>", "", block, flags=re.S)
         block = re.sub(r"<majorGridlines[^/]*/>", "", block)
@@ -764,11 +806,39 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
     )
     xml = re.sub(
         r"<plotArea>\s*<spPr>.*?</spPr>",
-        "<plotArea>",
+        f"<plotArea>{plot_fill}",
         xml,
         count=1,
         flags=re.S,
     )
+    if f'<a:srgbClr val="{BI_PLOT_AXIS_GREY}"/>' not in xml.split("</plotArea>", 1)[0]:
+        xml = xml.replace("<plotArea>", f"<plotArea>{plot_fill}", 1)
+    xml = re.sub(
+        r"<scatterStyle[^/]*/>",
+        '<scatterStyle val="lineMarker"/>',
+        xml,
+    )
+    if "scatterStyle" not in xml:
+        xml = xml.replace(
+            "<scatterChart>",
+            '<scatterChart><scatterStyle val="lineMarker"/>',
+            1,
+        )
+
+    def patch_crosshair_ser(match: re.Match[str]) -> str:
+        block = match.group(0)
+        if "_cross_" not in block:
+            return block
+        block = re.sub(r"<smooth[^/]*/>", '<smooth val="0"/>', block)
+        if "smooth" not in block:
+            block = block.replace("</ser>", '<smooth val="0"/></ser>', 1)
+        block = re.sub(r"<marker>.*?</marker>", "<marker><symbol val=\"none\"/></marker>", block, flags=re.S)
+        if "<marker" not in block:
+            block = block.replace("</ser>", '<marker><symbol val="none"/></marker></ser>', 1)
+        block = re.sub(r"<dLbls>.*?</dLbls>", "", block, flags=re.S)
+        return block
+
+    xml = re.sub(r"<ser>.*?</ser>", patch_crosshair_ser, xml, flags=re.S)
     return xml
 
 
