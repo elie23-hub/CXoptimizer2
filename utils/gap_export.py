@@ -70,6 +70,7 @@ CHART_ANCHOR_CELL = (1, 10)  # J1
 # Populated per export request and passed into chart XML post-processing.
 CHART_CROSSHAIR_SERIES = 2
 BI_PLOT_AXIS_GREY = "C9CED8"
+CHART_OUTER_BORDER = "6B7280"
 # Crosshair stops short of plot edge (fraction of axis span per side).
 CROSSHAIR_INSET_FRAC = 0.05
 
@@ -851,16 +852,18 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
 
     xml = re.sub(r"<ser>.*?</ser>", patch_crosshair_ser, xml, flags=re.S)
 
-    # No outer chart-area frame (Excel default rounded border).
-    chart_area_fill = (
+    # Outer chart frame only — no inner plot-area border.
+    chart_area_frame = (
         '<spPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
         '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
-        "<a:ln><a:noFill/></a:ln></spPr>"
+        '<a:ln w="12700" cap="flat" cmpd="sng">'
+        f'<a:solidFill><a:srgbClr val="{CHART_OUTER_BORDER}"/></a:solidFill>'
+        '<a:prstDash val="solid"/></a:ln></spPr>'
     )
     if re.search(r"<chartSpace[^>]*>\s*<spPr", xml, flags=re.S):
         xml = re.sub(
             r"(<chartSpace[^>]*>)\s*<spPr>.*?</spPr>",
-            r"\1" + chart_area_fill,
+            r"\1" + chart_area_frame,
             xml,
             count=1,
             flags=re.S,
@@ -868,9 +871,17 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
     else:
         xml = re.sub(
             r"(<chartSpace[^>]*>)",
-            r"\1" + chart_area_fill,
+            r"\1" + chart_area_frame,
             xml,
             count=1,
+        )
+    if "roundedCorners" not in xml:
+        xml = xml.replace("<chart>", '<chart><roundedCorners val="1"/>', 1)
+    else:
+        xml = re.sub(
+            r"<roundedCorners[^/]*/>",
+            '<roundedCorners val="1"/>',
+            xml,
         )
     return xml
 
