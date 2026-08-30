@@ -70,6 +70,8 @@ CHART_ANCHOR_CELL = (1, 10)  # J1
 # Populated per export request and passed into chart XML post-processing.
 CHART_CROSSHAIR_SERIES = 2
 BI_PLOT_AXIS_GREY = "C9CED8"
+# Crosshair stops short of plot border (fraction of axis span per side).
+CROSSHAIR_INSET_FRAC = 0.11
 
 
 def _escape_xml_text(text: str) -> str:
@@ -462,21 +464,28 @@ def _crosshair_line_series(
     return series
 
 
+def _crosshair_inner_bounds(axis_min: float, axis_max: float) -> tuple[float, float]:
+    span = axis_max - axis_min
+    inset = span * CROSSHAIR_INSET_FRAC
+    return axis_min + inset, axis_max - inset
+
+
 def _write_crosshair_source(
     ws: Worksheet, last_row: int, axis_min: float, axis_max: float
 ) -> tuple[tuple[int, int], tuple[int, int]]:
-    """Scratch Z rows for centre horizontal + vertical crosshair lines."""
+    """Scratch Z rows for inset centre horizontal + vertical crosshair lines."""
+    inner_min, inner_max = _crosshair_inner_bounds(axis_min, axis_max)
     base = last_row + 2  # last_row+1 is merged range note
     h1, h2 = base, base + 1
     v1, v2 = base + 2, base + 3
-    ws.cell(row=h1, column=CHART_Z_COL, value=axis_min)
+    ws.cell(row=h1, column=CHART_Z_COL, value=inner_min)
     ws.cell(row=h1, column=CHART_Z_COL + 1, value=0)
-    ws.cell(row=h2, column=CHART_Z_COL, value=axis_max)
+    ws.cell(row=h2, column=CHART_Z_COL, value=inner_max)
     ws.cell(row=h2, column=CHART_Z_COL + 1, value=0)
     ws.cell(row=v1, column=CHART_Z_COL, value=0)
-    ws.cell(row=v1, column=CHART_Z_COL + 1, value=axis_min)
+    ws.cell(row=v1, column=CHART_Z_COL + 1, value=inner_min)
     ws.cell(row=v2, column=CHART_Z_COL, value=0)
-    ws.cell(row=v2, column=CHART_Z_COL + 1, value=axis_max)
+    ws.cell(row=v2, column=CHART_Z_COL + 1, value=inner_max)
     return (h1, h2), (v1, v2)
 
 
@@ -804,15 +813,19 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
         xml,
         flags=re.S,
     )
-    xml = re.sub(
-        r"<plotArea>\s*<spPr>.*?</spPr>",
-        f"<plotArea>{plot_fill}",
-        xml,
-        count=1,
-        flags=re.S,
-    )
-    if f'<a:srgbClr val="{BI_PLOT_AXIS_GREY}"/>' not in xml.split("</plotArea>", 1)[0]:
+    if not re.search(r"<plotArea>\s*<spPr", xml):
         xml = xml.replace("<plotArea>", f"<plotArea>{plot_fill}", 1)
+
+    plot_layout = (
+        "<layout><manualLayout>"
+        '<layoutTarget val="inner"/>'
+        '<xMode val="edge"/><yMode val="edge"/>'
+        '<x val="0.07"/><y val="0.10"/>'
+        '<w val="0.86"/><h val="0.78"/>'
+        "</manualLayout></layout>"
+    )
+    if "<layout>" not in xml.split("</plotArea>", 1)[0]:
+        xml = xml.replace("</plotArea>", plot_layout + "</plotArea>", 1)
     xml = re.sub(
         r"<scatterStyle[^/]*/>",
         '<scatterStyle val="lineMarker"/>',
