@@ -15,6 +15,7 @@ from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.chart import ScatterChart, Reference, Series
+from openpyxl.chart.axis import ChartLines
 from openpyxl.chart.label import DataLabel, DataLabelList
 from openpyxl.chart.marker import Marker
 from openpyxl.chart.shapes import GraphicalProperties
@@ -431,18 +432,34 @@ def _equal_axis_extent(
     return -extent, extent
 
 
-def _style_biplot_axes(chart: ScatterChart) -> None:
-    """Axis box lines without numeric tick labels (openpyxl + XML patch)."""
-    axis_border = GraphicalProperties(ln=LineProperties(solidFill="C9CED8"))
-    # openpyxl defaults both scatter axes to left — X must be bottom for a visible box.
+def _biplot_gridlines() -> ChartLines:
+    return ChartLines(
+        spPr=GraphicalProperties(
+            ln=LineProperties(solidFill="C9CED8", w=9525)
+        )
+    )
+
+
+def _axis_line_sppr() -> GraphicalProperties:
+    return GraphicalProperties(ln=LineProperties(solidFill="C9CED8", w=12700))
+
+
+def _style_biplot_axes(chart: ScatterChart, *, axis_half_span: float) -> None:
+    """Crosshair axes at z=0, no tick numbers (matches web biplot / VBA)."""
+    grid = _biplot_gridlines()
+    axis_line = _axis_line_sppr()
+    # openpyxl defaults both scatter axes to left — X must be bottom.
     chart.x_axis.axPos = "b"
     chart.y_axis.axPos = "l"
     for axis in (chart.x_axis, chart.y_axis):
-        axis.spPr = axis_border
+        axis.spPr = axis_line
         axis.majorTickMark = "none"
         axis.minorTickMark = "none"
         axis.tickLblPos = "none"
         axis.crosses = "autoZero"
+        # Gridlines at -extent, 0, +extent draw the visible crosshair axes.
+        axis.majorGridlines = grid
+        axis.majorUnit = axis_half_span
 
 
 def _quadrant_marker_color(quadrant: str) -> str:
@@ -475,7 +492,6 @@ def _add_openpyxl_chart(
 
     chart = ScatterChart()
     chart.title = chart_title
-    chart.style = 10
     chart.scatterStyle = "marker"
     chart.x_axis.title = "Performance (z)"
     chart.y_axis.title = "Importance (z)"
@@ -486,14 +502,9 @@ def _add_openpyxl_chart(
     chart.y_axis.scaling.max = axis_max
     chart.x_axis.crosses = "autoZero"
     chart.y_axis.crosses = "autoZero"
-    # No gridlines; keep axis box, hide numeric tick labels (matches VBA biplot).
-    chart.x_axis.majorGridlines = None
-    chart.y_axis.majorGridlines = None
     span = axis_max - axis_min
-    major = round(span / 10.0, 2) if span > 0 else 0.5
-    chart.x_axis.majorUnit = major
-    chart.y_axis.majorUnit = major
-    _style_biplot_axes(chart)
+    axis_half_span = round(span / 2.0, 3) if span > 0 else 2.5
+    _style_biplot_axes(chart, axis_half_span=axis_half_span)
     chart.legend = None
     # Square chart object => equal visual quadrant sizes
     chart_size_cm = 16.0
@@ -686,14 +697,15 @@ def _patch_chart_xml_leader_lines(
 
 
 def _patch_chart_xml_restore_axes(xml: str) -> str:
-    """Ensure axis box lines show and numeric tick labels stay hidden."""
+    """Crosshair axes at zero; hide tick numbers; no plot-area border."""
 
-    axis_line = (
-        "<spPr><ln w=\"9525\" cap=\"flat\">"
-        '<solidFill><srgbClr val="C9CED8"/></solidFill>'
-        "</ln></spPr>"
+    axis_sppr = (
+        '<spPr><a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'w="12700" cap="flat">'
+        '<a:solidFill><a:srgbClr val="C9CED8"/></a:solidFill>'
+        '<a:prstDash val="solid"/></a:ln></spPr>'
     )
-    plot_border = (
+    grid_sppr = (
         '<spPr><a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
         'w="9525" cap="flat">'
         '<a:solidFill><a:srgbClr val="C9CED8"/></a:solidFill>'
@@ -742,8 +754,23 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
             block = block.replace(
                 close_tag, '<majorTickMark val="none"/>' + close_tag, 1
             )
-        if "<spPr>" not in block and "<a:ln" not in block:
-            block = block.replace(open_tag, open_tag + axis_line, 1)
+        block = re.sub(r"<spPr>.*?</spPr>", axis_sppr, block, count=1, flags=re.S)
+        if "spPr" not in block:
+            block = block.replace(open_tag, open_tag + axis_sppr, 1)
+        if "majorGridlines" not in block:
+            block = block.replace(
+                close_tag,
+                f"<majorGridlines>{grid_sppr}</majorGridlines>" + close_tag,
+                1,
+            )
+        else:
+            block = re.sub(
+                r"<majorGridlines>.*?</majorGridlines>",
+                f"<majorGridlines>{grid_sppr}</majorGridlines>",
+                block,
+                count=1,
+                flags=re.S,
+            )
         return block
 
     xml = re.sub(
@@ -752,8 +779,13 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
         xml,
         flags=re.S,
     )
-    if not re.search(r"</valAx>\s*<spPr>", xml):
-        xml = xml.replace("</plotArea>", plot_border + "</plotArea>", 1)
+    # Remove plot-area border (outer grey rectangle) if a previous build added it.
+    xml = re.sub(
+        r"</valAx>\s*<spPr><a:ln[^>]*>.*?</a:ln></spPr>\s*(?=</plotArea>)",
+        "</valAx>",
+        xml,
+        flags=re.S,
+    )
     return xml
 
 
