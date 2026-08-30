@@ -580,7 +580,6 @@ def _add_openpyxl_chart(
         point_lbl.showVal = False
         point_lbl.showCatName = False
         point_lbl.showLegendKey = False
-        point_lbl.showLeaderLines = True
         point_lbl.dLblPos = "r"
         dLbls.dLbl.append(point_lbl)
         series.dLbls = dLbls
@@ -704,6 +703,7 @@ def _patch_chart_xml_leader_lines(
                         dlbl = dlbl.replace(
                             "</dLbl>", '<showLegendKey val="0"/></dLbl>'
                         )
+                    dlbl = re.sub(r"<showLeaderLines[^/]*/>", "", dlbl)
                     return _inject_dLbl_layout(dlbl, ox, oy)
 
                 dlbls = re.sub(
@@ -723,7 +723,6 @@ def _patch_chart_xml_leader_lines(
                     f'<dLblPos val="r"/>'
                     f'<showSerName val="0"/><showVal val="0"/>'
                     f'<showLegendKey val="0"/>'
-                    f'<showLeaderLines val="1"/>'
                     f"</dLbl>"
                 )
                 dlbls = dlbls.replace("<dLbls>", f"<dLbls>{injected}", 1)
@@ -732,6 +731,16 @@ def _patch_chart_xml_leader_lines(
         return re.sub(r"<dLbls>.*?</dLbls>", patch_dlbls, block, flags=re.S)
 
     return re.sub(r"<ser>.*?</ser>", patch_ser, xml, flags=re.S)
+
+
+def _patch_chart_xml_sanitize_dLbls(xml: str) -> str:
+    """showLeaderLines is only valid on dLbls, not on individual dLbl (Excel repair otherwise)."""
+
+    def scrub_dlbl(match: re.Match[str]) -> str:
+        block = match.group(0)
+        return re.sub(r"<showLeaderLines[^/]*/>", "", block)
+
+    return re.sub(r"<dLbl>.*?</dLbl>", scrub_dlbl, xml, flags=re.S)
 
 
 def _patch_chart_xml_restore_axes(xml: str) -> str:
@@ -815,16 +824,6 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
     if not re.search(r"<plotArea>\s*<spPr", xml):
         xml = xml.replace("<plotArea>", f"<plotArea>{plot_fill}", 1)
 
-    plot_layout = (
-        "<layout><manualLayout>"
-        '<layoutTarget val="inner"/>'
-        '<xMode val="edge"/><yMode val="edge"/>'
-        '<x val="0.05"/><y val="0.06"/>'
-        '<w val="0.90"/><h val="0.84"/>'
-        "</manualLayout></layout>"
-    )
-    if not re.search(r"<plotArea>\s*<layout>", xml):
-        xml = xml.replace("<plotArea>", f"<plotArea>{plot_layout}", 1)
     xml = re.sub(
         r"<scatterStyle[^/]*/>",
         '<scatterStyle val="lineMarker"/>',
@@ -921,15 +920,10 @@ def _patch_chart_xml_hide_legend_keys(xml: str) -> str:
 
 
 def _patch_chart_xml(xml: str, label_cells: list[tuple[str, str]] | None = None) -> str:
-    try:
-        xml = _patch_chart_xml_leader_lines(xml, label_cells or [])
-        xml = _patch_chart_xml_hide_legend_keys(xml)
-    except Exception:
-        pass
-    try:
-        xml = _patch_chart_xml_restore_axes(xml)
-    except Exception:
-        pass
+    xml = _patch_chart_xml_leader_lines(xml, label_cells or [])
+    xml = _patch_chart_xml_hide_legend_keys(xml)
+    xml = _patch_chart_xml_sanitize_dLbls(xml)
+    xml = _patch_chart_xml_restore_axes(xml)
     return xml
 
 
@@ -954,7 +948,7 @@ def _patch_workbook_charts(
                 text = _patch_chart_xml(text, labels)
                 raw = text.encode("utf-8")
                 chart_idx += 1
-            dst.writestr(name, raw, compress_type=zipfile.ZIP_DEFLATED)
+            dst.writestr(info, raw)
     src.close()
     return out.getvalue()
 
