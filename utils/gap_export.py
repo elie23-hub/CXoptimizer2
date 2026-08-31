@@ -215,7 +215,7 @@ def _write_table(
     flat: list[dict[str, Any]] = []
 
     values = [
-        "Overall satisfaction",
+        "overall calculated satisfaction",
         "-",
         _pct(overall_csat),
         "-",

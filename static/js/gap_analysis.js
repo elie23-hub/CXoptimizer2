@@ -1368,7 +1368,7 @@
     const overall = tableOverallCsat(table);
 
     tableBody.appendChild(
-      renderCsatRow("Overall satisfaction", null, overall, "gap-row-overall")
+      renderCsatRow("overall calculated satisfaction", null, overall, "gap-row-overall")
     );
 
     (table.sections || []).forEach(function (sec) {
