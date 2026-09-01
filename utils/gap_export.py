@@ -573,14 +573,13 @@ def _add_openpyxl_chart(
         dLbls.showPercent = False
         dLbls.showLegendKey = False
         dLbls.showLeaderLines = True
-        label_pos = ("r", "l", "t", "b")[(row - first) % 4]
-        dLbls.dLblPos = label_pos
+        dLbls.dLblPos = "t"
         point_lbl = DataLabel(idx=0)
         point_lbl.showSerName = True
         point_lbl.showVal = False
         point_lbl.showCatName = False
         point_lbl.showLegendKey = False
-        point_lbl.dLblPos = label_pos
+        point_lbl.dLblPos = "t"
         dLbls.dLbl.append(point_lbl)
         series.dLbls = dLbls
         chart.series.append(series)
@@ -1105,4 +1104,5 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
 
     buf = BytesIO()
     wb.save(buf)
-    return _patch_workbook_charts(buf.getvalue(), label_batches)
+    # No chart XML patching — labels sit above points; leader lines appear when dragged in Excel.
+    return buf.getvalue()
