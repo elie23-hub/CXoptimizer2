@@ -678,12 +678,6 @@ def _patch_chart_xml_leader_lines(
             # Ensure position is not center
             if "dLblPos" not in dlbls:
                 dlbls = dlbls.replace("</dLbls>", '<dLblPos val="r"/></dLbls>')
-            if "leaderLines" not in dlbls:
-                dlbls = dlbls.replace(
-                    "</dLbls>",
-                    '<leaderLines><spPr><a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
-                    'w="9525"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln></spPr></leaderLines></dLbls>',
-                )
 
             if re.search(r"<dLbl[\s>]", dlbls):
                 def patch_point_lbl(mm: re.Match[str]) -> str:
@@ -837,7 +831,6 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
     ):
         frame = (
             '<spPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
-            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
             '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
             '<a:ln w="12700">'
             f'<a:solidFill><a:srgbClr val="{CHART_OUTER_BORDER}"/></a:solidFill>'
