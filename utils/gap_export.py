@@ -619,6 +619,69 @@ def _build_dLbl_xml(
     )
 
 
+def _patch_chart_xml_spread_labels(xml: str) -> str:
+    """
+    Excel draws scatter leader lines only when labels are manually offset.
+    Keep openpyxl series-name labels; add layout offsets + showLeaderLines on dLbls.
+    """
+    offsets = (
+        (0.10, -0.12),
+        (0.12, 0.10),
+        (-0.22, -0.12),
+        (-0.22, 0.10),
+        (0.08, 0.14),
+        (-0.10, 0.12),
+    )
+    ser_idx = 0
+
+    def patch_ser(match: re.Match[str]) -> str:
+        nonlocal ser_idx
+        block = match.group(0)
+        if ser_idx < CHART_CROSSHAIR_SERIES:
+            ser_idx += 1
+            return block
+        ox, oy = offsets[(ser_idx - CHART_CROSSHAIR_SERIES) % len(offsets)]
+        ser_idx += 1
+
+        def patch_dlbls(m: re.Match[str]) -> str:
+            dlbls = m.group(0)
+            if "showLeaderLines" not in dlbls:
+                dlbls = dlbls.replace(
+                    "</dLbls>", '<showLeaderLines val="1"/></dLbls>'
+                )
+            else:
+                dlbls = re.sub(
+                    r"<showLeaderLines[^/]*/>",
+                    '<showLeaderLines val="1"/>',
+                    dlbls,
+                )
+
+            layout_xml = (
+                "<layout><manualLayout>"
+                '<xMode val="factor"/><yMode val="factor"/>'
+                f'<x val="{ox:.4f}"/><y val="{oy:.4f}"/>'
+                "</manualLayout></layout>"
+            )
+
+            def patch_dlbl(mm: re.Match[str]) -> str:
+                dlbl = mm.group(0)
+                dlbl = re.sub(r"<showLeaderLines[^/]*/>", "", dlbl)
+                if "manualLayout" in dlbl:
+                    return dlbl
+                idx_m = re.search(r'(<idx val="[^"]+"/>)', dlbl)
+                if idx_m:
+                    return dlbl.replace(idx_m.group(1), idx_m.group(1) + layout_xml, 1)
+                return dlbl.replace("<dLbl>", f"<dLbl>{layout_xml}", 1)
+
+            return re.sub(r"<dLbl>.*?</dLbl>", patch_dlbl, dlbls, flags=re.S)
+
+        if "<dLbls>" not in block:
+            return block
+        return re.sub(r"<dLbls>.*?</dLbls>", patch_dlbls, block, flags=re.S)
+
+    return re.sub(r"<ser>.*?</ser>", patch_ser, xml, flags=re.S)
+
+
 def _patch_chart_xml_leader_lines(
     xml: str, label_cells: list[tuple[str, str]]
 ) -> str:
@@ -876,9 +939,9 @@ def _patch_chart_xml_hide_legend_keys(xml: str) -> str:
 
 
 def _patch_chart_xml(xml: str, label_cells: list[tuple[str, str]] | None = None) -> str:
-    """Label/leader-line patches only — axis styling is set via openpyxl (avoids corrupt chart XML)."""
-    xml = _patch_chart_xml_leader_lines(xml, label_cells or [])
-    xml = _patch_chart_xml_hide_legend_keys(xml)
+    """Spread labels + leader lines only (no strRef / axis frame patches)."""
+    del label_cells  # kept for call-site compatibility
+    xml = _patch_chart_xml_spread_labels(xml)
     xml = _patch_chart_xml_sanitize_dLbls(xml)
     return xml
 
@@ -904,7 +967,7 @@ def _patch_workbook_charts(
                 text = _patch_chart_xml(text, labels)
                 raw = text.encode("utf-8")
                 chart_idx += 1
-            dst.writestr(info, raw)
+            dst.writestr(info.filename, raw, compress_type=info.compress_type)
     src.close()
     return out.getvalue()
 
@@ -1042,5 +1105,4 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
 
     buf = BytesIO()
     wb.save(buf)
-    # Skip chart XML post-processing — manual layout / strRef patches corrupt Excel charts.
-    return buf.getvalue()
+    return _patch_workbook_charts(buf.getvalue(), label_batches)
