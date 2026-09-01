@@ -627,10 +627,12 @@ def _patch_chart_xml_leader_lines(
     Inject factor-based layout offsets and cell-based label text (no legend key).
     """
     offsets = (
-        (0.05, -0.06),
-        (0.05, 0.045),
-        (-0.14, -0.06),
-        (-0.14, 0.045),
+        (0.10, -0.12),
+        (0.12, 0.10),
+        (-0.22, -0.12),
+        (-0.22, 0.10),
+        (0.08, 0.14),
+        (-0.10, 0.12),
     )
     ser_idx = 0
 
@@ -676,6 +678,12 @@ def _patch_chart_xml_leader_lines(
             # Ensure position is not center
             if "dLblPos" not in dlbls:
                 dlbls = dlbls.replace("</dLbls>", '<dLblPos val="r"/></dLbls>')
+            if "leaderLines" not in dlbls:
+                dlbls = dlbls.replace(
+                    "</dLbls>",
+                    '<leaderLines><spPr><a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+                    'w="9525"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln></spPr></leaderLines></dLbls>',
+                )
 
             if re.search(r"<dLbl[\s>]", dlbls):
                 def patch_point_lbl(mm: re.Match[str]) -> str:
@@ -829,12 +837,20 @@ def _patch_chart_xml_restore_axes(xml: str) -> str:
     ):
         frame = (
             '<spPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
             '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
             '<a:ln w="12700">'
             f'<a:solidFill><a:srgbClr val="{CHART_OUTER_BORDER}"/></a:solidFill>'
             "</a:ln></spPr>"
         )
         xml = xml.replace("</chart></chartSpace>", f"</chart>{frame}</chartSpace>", 1)
+
+    # Square outer frame — no rounded chart corners.
+    if "roundedCorners" not in xml:
+        xml = xml.replace("<chart>", '<chart><roundedCorners val="0"/>', 1)
+    else:
+        xml = re.sub(r"<roundedCorners[^/]*/>", '<roundedCorners val="0"/>', xml)
+
     return xml
 
 
