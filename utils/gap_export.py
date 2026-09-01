@@ -16,8 +16,8 @@ from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.chart import ScatterChart, Reference, Series
-from openpyxl.chart.label import DataLabel, DataLabelList
-from openpyxl.chart.marker import Marker
+from openpyxl.chart.label import DataLabelList
+from openpyxl.chart.marker import DataPoint, Marker
 from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.drawing.line import LineProperties
 from openpyxl.drawing.spreadsheet_drawing import AbsoluteAnchor
@@ -83,6 +83,12 @@ def _escape_xml_text(text: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+def _label_range_formula(sheet_title: str, first: int, last: int) -> str:
+    col = get_column_letter(CHART_Z_COL + 3)
+    safe = str(sheet_title or "Sheet").replace("'", "''")
+    return f"'{safe}'!${col}${first}:${col}${last}"
 
 
 def _label_cell_formula(sheet_title: str, row: int) -> str:
@@ -501,30 +507,32 @@ def _add_openpyxl_chart(
     first: int,
     last: int,
     anchor_row: int,
-) -> list[tuple[str, str]]:
+) -> tuple[str, list[str]] | None:
     """
-    Biplot-style scatter: equal X/Y axis dimensions (shared z extent),
-    centered under the table, markers only, labels from Label column,
-    marker colors by quadrant.
+    Biplot-style scatter: one data series (all labels select together in Excel),
+    per-point quadrant colors via dPt, labels from Label column above each point.
     """
+    data_rows: list[int] = []
     xs: list[float] = []
     ys: list[float] = []
     for row in range(first, last + 1):
         try:
             xs.append(float(ws.cell(row=row, column=CHART_Z_COL).value))
             ys.append(float(ws.cell(row=row, column=CHART_Z_COL + 1).value))
+            data_rows.append(row)
         except (TypeError, ValueError):
             continue
+
+    if not data_rows:
+        return None
 
     axis_min, axis_max = _equal_axis_extent(xs, ys)
 
     chart = ScatterChart()
     chart.title = chart_title
-    # lineMarker so crosshair/box line series render; data series stay marker-only
     chart.scatterStyle = "lineMarker"
     chart.x_axis.title = "Performance (z)"
     chart.y_axis.title = "Importance (z)"
-    # Same +/- extent on both axes so (0,0) is centered (not shifted)
     chart.x_axis.scaling.min = axis_min
     chart.x_axis.scaling.max = axis_max
     chart.y_axis.scaling.min = axis_min
@@ -540,50 +548,44 @@ def _add_openpyxl_chart(
     h_rows, v_rows = _write_crosshair_source(ws, last, axis_min, axis_max)
     chart.series.append(_crosshair_line_series(ws, h_rows[0], h_rows[1], title="_cross_h"))
     chart.series.append(_crosshair_line_series(ws, v_rows[0], v_rows[1], title="_cross_v"))
-    # Square chart object => equal visual quadrant sizes
     chart_size_cm = 16.0
     chart.height = chart_size_cm
     chart.width = chart_size_cm
 
-    label_batch: list[tuple[str, str]] = []
+    first_data, last_data = data_rows[0], data_rows[-1]
+    xvalues = Reference(ws, min_col=CHART_Z_COL, min_row=first_data, max_row=last_data)
+    yvalues = Reference(ws, min_col=CHART_Z_COL + 1, min_row=first_data, max_row=last_data)
+    series = Series(yvalues, xvalues, title="Statements")
+    series.graphicalProperties = GraphicalProperties(ln=LineProperties(noFill=True))
+    series.marker = Marker(symbol="circle", size=8)
 
-    for row in range(first, last + 1):
-        xvalues = Reference(ws, min_col=CHART_Z_COL, min_row=row, max_row=row)
-        yvalues = Reference(ws, min_col=CHART_Z_COL + 1, min_row=row, max_row=row)
+    label_texts: list[str] = []
+    for pt_idx, row in enumerate(data_rows):
         label = ws.cell(row=row, column=CHART_Z_COL + 3).value
         quadrant = str(ws.cell(row=row, column=CHART_Z_COL + 2).value or "")
         title = str(label).strip() if label not in (None, "") else f"Point {row}"
         if len(title) > 200:
             title = title[:197] + "..."
-        label_batch.append((_label_cell_formula(ws.title, row), title))
-        series = Series(yvalues, xvalues, title=title)
-        # Markers only — no connecting line between points
-        series.graphicalProperties = GraphicalProperties(
-            ln=LineProperties(noFill=True)
-        )
-        series.marker = Marker(symbol="circle", size=8)
-        series.marker.graphicalProperties = GraphicalProperties(
+        label_texts.append(title)
+        pt = DataPoint(idx=pt_idx)
+        pt.marker = Marker(symbol="circle", size=8)
+        pt.marker.graphicalProperties = GraphicalProperties(
             solidFill=_quadrant_marker_color(quadrant),
             ln=LineProperties(noFill=True),
         )
-        dLbls = DataLabelList()
-        dLbls.showSerName = True
-        dLbls.showVal = False
-        dLbls.showCatName = False
-        dLbls.showPercent = False
-        dLbls.showLegendKey = False
-        dLbls.showLeaderLines = True
-        dLbls.dLblPos = "t"
-        point_lbl = DataLabel(idx=0)
-        point_lbl.showSerName = True
-        point_lbl.showVal = False
-        point_lbl.showCatName = False
-        point_lbl.showLegendKey = False
-        point_lbl.dLblPos = "t"
-        dLbls.dLbl.append(point_lbl)
-        series.dLbls = dLbls
-        chart.series.append(series)
-    # Center under results table (A-H)
+        series.dPt.append(pt)
+
+    dLbls = DataLabelList()
+    dLbls.showSerName = False
+    dLbls.showVal = False
+    dLbls.showCatName = False
+    dLbls.showPercent = False
+    dLbls.showLegendKey = False
+    dLbls.showLeaderLines = True
+    dLbls.dLblPos = "t"
+    series.dLbls = dLbls
+    chart.series.append(series)
+
     table_px = _table_width_px(ws, last_col=8)
     chart_px = chart_size_cm * (96.0 / 2.54)
     left_px = max(0.0, (table_px - chart_px) / 2.0)
@@ -594,7 +596,31 @@ def _add_openpyxl_chart(
         ext=XDRPositiveSize2D(cx=cm_to_EMU(chart_size_cm), cy=cm_to_EMU(chart_size_cm)),
     )
     ws.add_chart(chart)
-    return label_batch
+    return _label_range_formula(ws.title, first_data, last_data), label_texts
+
+
+def _patch_chart_xml_label_from_cells(
+    xml: str, formula: str, texts: list[str]
+) -> str:
+    """Link all data labels to the Label column (one dLbls block = select all in Excel)."""
+    cache_pts = "".join(
+        f'<pt idx="{i}"><v>{_escape_xml_text(t)}</v></pt>'
+        for i, t in enumerate(texts)
+    )
+    strref = (
+        "<strRef>"
+        f"<f>{_escape_xml_text(formula)}</f>"
+        f'<strCache><ptCount val="{len(texts)}"/>{cache_pts}</strCache>'
+        "</strRef>"
+    )
+
+    def patch_dlbls(match: re.Match[str]) -> str:
+        block = match.group(0)
+        if "strRef" in block or "showLeaderLines" not in block:
+            return block
+        return block.replace("</dLbls>", strref + "</dLbls>", 1)
+
+    return re.sub(r"<dLbls>.*?</dLbls>", patch_dlbls, xml, count=1, flags=re.S)
 
 
 def _build_dLbl_xml(
@@ -937,18 +963,21 @@ def _patch_chart_xml_hide_legend_keys(xml: str) -> str:
     return re.sub(r"<dLbl>.*?</dLbl>", patch_dlbl, xml, flags=re.S)
 
 
-def _patch_chart_xml(xml: str, label_cells: list[tuple[str, str]] | None = None) -> str:
-    """Spread labels + leader lines only (no strRef / axis frame patches)."""
-    del label_cells  # kept for call-site compatibility
-    xml = _patch_chart_xml_spread_labels(xml)
+def _patch_chart_xml(
+    xml: str, label_info: tuple[str, list[str]] | None = None
+) -> str:
+    """Label range from cells + sanitize only (no spread offsets)."""
+    if label_info:
+        formula, texts = label_info
+        xml = _patch_chart_xml_label_from_cells(xml, formula, texts)
     xml = _patch_chart_xml_sanitize_dLbls(xml)
     return xml
 
 
 def _patch_workbook_charts(
-    data: bytes, label_batches: list[list[tuple[str, str]]]
+    data: bytes, label_batches: list[tuple[str, list[str]]]
 ) -> bytes:
-    """Post-process chart XML (labels, leader lines, axes)."""
+    """Post-process chart XML (shared label range for all points)."""
     src = zipfile.ZipFile(BytesIO(data), "r")
     out = BytesIO()
     chart_idx = 0
@@ -958,12 +987,12 @@ def _patch_workbook_charts(
             name = info.filename
             if name.startswith("xl/charts/chart") and name.endswith(".xml"):
                 text = raw.decode("utf-8")
-                labels = (
+                label_info = (
                     label_batches[chart_idx]
                     if chart_idx < len(label_batches)
-                    else []
+                    else None
                 )
-                text = _patch_chart_xml(text, labels)
+                text = _patch_chart_xml(text, label_info)
                 raw = text.encode("utf-8")
                 chart_idx += 1
             dst.writestr(info.filename, raw, compress_type=info.compress_type)
@@ -983,7 +1012,7 @@ def _build_sheet(
     include_section_headers: bool,
     used_names: set[str],
     add_chart: bool,
-    label_batches: list[list[tuple[str, str]]],
+    label_batches: list[tuple[str, list[str]]],
 ) -> None:
     safe_name = _safe_sheet_title(sheet_name, used_names)
     ws = wb.create_sheet(title=safe_name)
@@ -1011,14 +1040,15 @@ def _build_sheet(
 
     if source_meta and add_chart:
         _hdr, first, last = source_meta
-        label_batch = _add_openpyxl_chart(
+        label_info = _add_openpyxl_chart(
             ws,
             chart_title=chart_title,
             first=first,
             last=last,
             anchor_row=anchor_row,
         )
-        label_batches.append(label_batch)
+        if label_info:
+            label_batches.append(label_info)
 
     ws.freeze_panes = f"A{next_row + 1}"
     ws.sheet_view.showGridLines = False
@@ -1030,7 +1060,7 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
       - Sheet 1: All Sections (full table + chart)
       - Sheet 2+: one sheet per section (chart titled with section name)
     """
-    label_batches: list[list[tuple[str, str]]] = []
+    label_batches: list[tuple[str, list[str]]] = []
     table = result.get("table") or {}
     sections = table.get("sections") or []
     overall = table.get("overall_csat")
@@ -1104,5 +1134,4 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
 
     buf = BytesIO()
     wb.save(buf)
-    # No chart XML patching — labels sit above points; leader lines appear when dragged in Excel.
-    return buf.getvalue()
+    return _patch_workbook_charts(buf.getvalue(), label_batches)
