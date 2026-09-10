@@ -507,10 +507,10 @@ def _add_openpyxl_chart(
     first: int,
     last: int,
     anchor_row: int,
-) -> tuple[str, list[str]] | None:
+) -> tuple[str, list[tuple[str, str]]] | None:
     """
-    One data series (all points) so labels share one Format Data Labels group.
-    Statement text + leader lines are applied via a safe c15 Values-from-Cells patch.
+    One data series (markers only — no lines between points).
+    Labels + Show Leader Lines + Values-from-Cells applied in a safe XML patch.
     """
     from openpyxl.chart.marker import DataPoint
 
@@ -532,6 +532,7 @@ def _add_openpyxl_chart(
 
     chart = ScatterChart()
     chart.title = chart_title
+    # lineMarker so crosshair series can draw lines; data series uses noFill (no connectors).
     chart.scatterStyle = "lineMarker"
     chart.x_axis.title = "Performance (z)"
     chart.y_axis.title = "Importance (z)"
@@ -560,21 +561,23 @@ def _add_openpyxl_chart(
     series = Series(yvalues, xvalues, title="Statements")
     series.graphicalProperties = GraphicalProperties(ln=LineProperties(noFill=True))
     series.marker = Marker(symbol="circle", size=8)
+    series.smooth = False
 
-    label_texts: list[str] = []
+    label_cells: list[tuple[str, str]] = []
     for pt_idx, row in enumerate(data_rows):
         label = ws.cell(row=row, column=CHART_Z_COL + 3).value
         quadrant = str(ws.cell(row=row, column=CHART_Z_COL + 2).value or "")
         title = str(label).strip() if label not in (None, "") else f"Point {row}"
         if len(title) > 200:
             title = title[:197] + "..."
-        label_texts.append(title)
+        label_cells.append((_label_cell_formula(ws.title, row), title))
         pt = DataPoint(idx=pt_idx)
         pt.marker = Marker(symbol="circle", size=8)
         pt.marker.graphicalProperties = GraphicalProperties(
             solidFill=_quadrant_marker_color(quadrant),
             ln=LineProperties(noFill=True),
         )
+        pt.graphicalProperties = GraphicalProperties(ln=LineProperties(noFill=True))
         series.dPt.append(pt)
 
     dLbls = DataLabelList()
@@ -599,7 +602,7 @@ def _add_openpyxl_chart(
         ext=XDRPositiveSize2D(cx=cm_to_EMU(chart_size_cm), cy=cm_to_EMU(chart_size_cm)),
     )
     ws.add_chart(chart)
-    return _label_range_formula(ws.title, first_data, last_data), label_texts
+    return _label_range_formula(ws.title, first_data, last_data), label_cells
 
 
 # Office chart15 URIs (Values from Cells + leader lines on scatter).
@@ -609,17 +612,18 @@ _C15_RANGE_EXT = "{02D57815-91ED-43cb-92C2-25804820EDAC}"
 
 
 def _patch_chart_xml_values_from_cells(
-    xml: str, formula: str, texts: list[str]
+    xml: str, formula: str, label_cells: list[tuple[str, str]]
 ) -> str:
     """
-    Wire statement labels via c15 Values-from-Cells (not bare strRef under dLbls).
-    Per-point dLbl + slight above offset so Excel:
-      - draws leader lines
-      - selects that statement on the first click (ready to drag)
+    Auto-apply Values from Cells + Show Leader Lines.
+    Each point gets a dLbl with cell text so statements appear on the chart.
+    Labels sit above points; leader lines appear when a label is dragged.
+    Also strips accidental connector lines between data points.
     """
-    if not texts:
+    if not label_cells:
         return xml
 
+    texts = [t for _, t in label_cells]
     cache_pts = "".join(
         f'<pt idx="{i}"><v>{_escape_xml_text(t)}</v></pt>'
         for i, t in enumerate(texts)
@@ -638,17 +642,20 @@ def _patch_chart_xml_values_from_cells(
         "</extLst>"
     )
 
-    # Slightly above the marker (manual layout) — required for leader lines + 1-click select.
-    point_lbls = []
-    for i in range(len(texts)):
-        ox = 0.04 if (i % 2 == 0) else -0.04
-        oy = -0.10
+    point_lbls: list[str] = []
+    for i, (cell_f, text) in enumerate(label_cells):
+        tx = (
+            "<tx><strRef>"
+            f"<f>{_escape_xml_text(cell_f)}</f>"
+            "<strCache>"
+            '<ptCount val="1"/>'
+            f'<pt idx="0"><v>{_escape_xml_text(text)}</v></pt>'
+            "</strCache>"
+            "</strRef></tx>"
+        )
         point_lbls.append(
             f'<dLbl><idx val="{i}"/>'
-            "<layout><manualLayout>"
-            '<xMode val="factor"/><yMode val="factor"/>'
-            f'<x val="{ox:.4f}"/><y val="{oy:.4f}"/>'
-            "</manualLayout></layout>"
+            f"{tx}"
             '<dLblPos val="t"/>'
             '<showLegendKey val="0"/><showVal val="0"/>'
             '<showCatName val="0"/><showSerName val="0"/>'
@@ -672,10 +679,47 @@ def _patch_chart_xml_values_from_cells(
         "</dLbls>"
     )
 
+    def strip_series_connectors(block: str) -> str:
+        # Force series line to noFill (markers only).
+        def force_nofill_series_ln(m: re.Match[str]) -> str:
+            return m.group(1) + "<a:noFill/>" + m.group(2)
+
+        block = re.sub(
+            r"(<tx><v>Statements</v></tx><spPr>\s*<a:ln[^>]*>).*?(</a:ln></spPr>)",
+            force_nofill_series_ln,
+            block,
+            count=1,
+            flags=re.S,
+        )
+
+        def fix_dpt(m: re.Match[str]) -> str:
+            dpt = m.group(0)
+
+            def repl_ln(mm: re.Match[str]) -> str:
+                if "noFill" in mm.group(2):
+                    return mm.group(0)
+                return mm.group(1) + "<a:noFill/>" + mm.group(3)
+
+            return re.sub(
+                r"(<spPr>\s*<a:ln[^>]*>)(.*?)(</a:ln>)",
+                repl_ln,
+                dpt,
+                count=1,
+                flags=re.S,
+            )
+
+        block = re.sub(r"<dPt>.*?</dPt>", fix_dpt, block, flags=re.S)
+        if "<smooth" not in block:
+            block = block.replace("</ser>", '<smooth val="0"/></ser>', 1)
+        else:
+            block = re.sub(r"<smooth[^/]*/>", '<smooth val="0"/>', block)
+        return block
+
     def patch_ser(match: re.Match[str]) -> str:
         block = match.group(0)
         if "<dLbls>" not in block or "_cross_" in block:
             return block
+        block = strip_series_connectors(block)
         block = re.sub(r"<dLbls>.*?</dLbls>", new_dlbls, block, count=1, flags=re.S)
         if "datalabelsRange" not in block:
             if block.endswith("</ser>"):
@@ -1052,18 +1096,18 @@ def _patch_chart_xml_hide_legend_keys(xml: str) -> str:
 
 
 def _patch_chart_xml(
-    xml: str, label_info: tuple[str, list[str]] | None = None
+    xml: str, label_info: tuple[str, list[tuple[str, str]]] | None = None
 ) -> str:
-    """Values-from-Cells + leader lines (schema-safe c15 extensions)."""
+    """Values-from-Cells + leader lines (schema-safe c15 + per-point tx)."""
     if label_info:
-        formula, texts = label_info
-        xml = _patch_chart_xml_values_from_cells(xml, formula, texts)
+        formula, label_cells = label_info
+        xml = _patch_chart_xml_values_from_cells(xml, formula, label_cells)
     xml = _patch_chart_xml_sanitize_dLbls(xml)
     return xml
 
 
 def _patch_workbook_charts(
-    data: bytes, label_batches: list[tuple[str, list[str]]]
+    data: bytes, label_batches: list[tuple[str, list[tuple[str, str]]]]
 ) -> bytes:
     """Post-process chart XML (shared label range for all points)."""
     src = zipfile.ZipFile(BytesIO(data), "r")
@@ -1100,7 +1144,7 @@ def _build_sheet(
     include_section_headers: bool,
     used_names: set[str],
     add_chart: bool,
-    label_batches: list[tuple[str, list[str]]],
+    label_batches: list[tuple[str, list[tuple[str, str]]]],
 ) -> None:
     safe_name = _safe_sheet_title(sheet_name, used_names)
     ws = wb.create_sheet(title=safe_name)
@@ -1148,7 +1192,7 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
       - Sheet 1: All Sections (full table + chart)
       - Sheet 2+: one sheet per section (chart titled with section name)
     """
-    label_batches: list[tuple[str, list[str]]] = []
+    label_batches: list[tuple[str, list[tuple[str, str]]]] = []
     table = result.get("table") or {}
     sections = table.get("sections") or []
     overall = table.get("overall_csat")
