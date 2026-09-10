@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import os
 import pickle
+import re
 import uuid
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
-from flask import Flask, jsonify, redirect, render_template, request, session, send_file, url_for
+from flask import Flask, jsonify, make_response, redirect, render_template, request, session, send_file, url_for
 
 from utils.gap_analysis import run_gap_analysis
 from utils.gap_export import build_gap_analysis_xlsx
@@ -618,19 +620,14 @@ def gap_analysis_export_xlsx():
 
     filename = summary.get("filename") or session.get("filename", "") or "gap_analysis"
     stem = Path(filename).stem or "gap_analysis"
-    download_name = f"{stem}_gap_analysis.xlsx"
+    download_name = _fresh_download_name(stem, "gap_analysis")
 
     try:
         xlsx_bytes = build_gap_analysis_xlsx(result, filename=filename)
     except Exception as exc:
         return jsonify({"ok": False, "error": f"Could not build Excel file: {exc}"}), 500
 
-    return send_file(
-        BytesIO(xlsx_bytes),
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        as_attachment=True,
-        download_name=download_name,
-    )
+    return _send_fresh_xlsx(xlsx_bytes, download_name)
 
 
 @app.route("/api/simulation/export-xlsx", methods=["POST"])
@@ -680,13 +677,8 @@ def simulation_export_xlsx():
         return jsonify({"ok": False, "error": f"Export failed: {exc}"}), 500
 
     stem = Path(_export_filename(summary)).stem or "simulation"
-    download_name = f"{stem}_{suffix}.xlsx"
-    return send_file(
-        BytesIO(xlsx_bytes),
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        as_attachment=True,
-        download_name=download_name,
-    )
+    download_name = _fresh_download_name(stem, suffix)
+    return _send_fresh_xlsx(xlsx_bytes, download_name)
 
 
 @app.route("/api/summary/export-xlsx", methods=["POST"])
@@ -727,19 +719,37 @@ def summary_export_xlsx():
         return jsonify({"ok": False, "error": f"Export failed: {exc}"}), 500
 
     stem = Path(_export_filename(summary)).stem or "summary"
-    download_name = f"{stem}_summary.xlsx"
-    return send_file(
-        BytesIO(xlsx_bytes),
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        as_attachment=True,
-        download_name=download_name,
-    )
+    download_name = _fresh_download_name(stem, "summary")
+    return _send_fresh_xlsx(xlsx_bytes, download_name)
 
 
 def _export_filename(summary: dict | None) -> str:
     if summary and summary.get("filename"):
         return str(summary["filename"])
     return session.get("filename", "") or "export"
+
+
+def _fresh_download_name(stem: str, suffix: str) -> str:
+    """Unique download name so each export is a new file (no overwrite of prior downloads)."""
+    safe = re.sub(r"[^\w\-]+", "_", str(stem or "export")).strip("_") or "export"
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{safe}_{suffix}_{stamp}.xlsx"
+
+
+def _send_fresh_xlsx(xlsx_bytes: bytes, download_name: str):
+    """Send an xlsx attachment that browsers/Excel treat as a new file (no cache)."""
+    resp = make_response(
+        send_file(
+            BytesIO(xlsx_bytes),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=download_name,
+        )
+    )
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @app.route("/simulation")

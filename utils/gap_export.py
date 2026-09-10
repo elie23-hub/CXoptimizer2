@@ -17,7 +17,7 @@ from typing import Any
 from openpyxl import Workbook
 from openpyxl.chart import ScatterChart, Reference, Series
 from openpyxl.chart.label import DataLabelList
-from openpyxl.chart.marker import DataPoint, Marker
+from openpyxl.chart.marker import Marker
 from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.drawing.line import LineProperties
 from openpyxl.drawing.spreadsheet_drawing import AbsoluteAnchor
@@ -507,24 +507,23 @@ def _add_openpyxl_chart(
     first: int,
     last: int,
     anchor_row: int,
-) -> tuple[str, list[str]] | None:
+) -> None:
     """
-    Biplot-style scatter: one data series (all labels select together in Excel),
-    per-point quadrant colors via dPt, labels from Label column above each point.
+    Biplot-style scatter via openpyxl only (no chart XML post-processing).
+    One series per point so each statement label can sit above its marker;
+    Show Leader Lines is on so Excel draws connectors when labels are dragged.
     """
-    data_rows: list[int] = []
     xs: list[float] = []
     ys: list[float] = []
     for row in range(first, last + 1):
         try:
             xs.append(float(ws.cell(row=row, column=CHART_Z_COL).value))
             ys.append(float(ws.cell(row=row, column=CHART_Z_COL + 1).value))
-            data_rows.append(row)
         except (TypeError, ValueError):
             continue
 
-    if not data_rows:
-        return None
+    if not xs:
+        return
 
     axis_min, axis_max = _equal_axis_extent(xs, ys)
 
@@ -552,39 +551,36 @@ def _add_openpyxl_chart(
     chart.height = chart_size_cm
     chart.width = chart_size_cm
 
-    first_data, last_data = data_rows[0], data_rows[-1]
-    xvalues = Reference(ws, min_col=CHART_Z_COL, min_row=first_data, max_row=last_data)
-    yvalues = Reference(ws, min_col=CHART_Z_COL + 1, min_row=first_data, max_row=last_data)
-    series = Series(yvalues, xvalues, title="Statements")
-    series.graphicalProperties = GraphicalProperties(ln=LineProperties(noFill=True))
-    series.marker = Marker(symbol="circle", size=8)
-
-    label_texts: list[str] = []
-    for pt_idx, row in enumerate(data_rows):
+    for row in range(first, last + 1):
+        try:
+            float(ws.cell(row=row, column=CHART_Z_COL).value)
+            float(ws.cell(row=row, column=CHART_Z_COL + 1).value)
+        except (TypeError, ValueError):
+            continue
+        xvalues = Reference(ws, min_col=CHART_Z_COL, min_row=row, max_row=row)
+        yvalues = Reference(ws, min_col=CHART_Z_COL + 1, min_row=row, max_row=row)
         label = ws.cell(row=row, column=CHART_Z_COL + 3).value
         quadrant = str(ws.cell(row=row, column=CHART_Z_COL + 2).value or "")
         title = str(label).strip() if label not in (None, "") else f"Point {row}"
         if len(title) > 200:
             title = title[:197] + "..."
-        label_texts.append(title)
-        pt = DataPoint(idx=pt_idx)
-        pt.marker = Marker(symbol="circle", size=8)
-        pt.marker.graphicalProperties = GraphicalProperties(
+        series = Series(yvalues, xvalues, title=title)
+        series.graphicalProperties = GraphicalProperties(ln=LineProperties(noFill=True))
+        series.marker = Marker(symbol="circle", size=8)
+        series.marker.graphicalProperties = GraphicalProperties(
             solidFill=_quadrant_marker_color(quadrant),
             ln=LineProperties(noFill=True),
         )
-        series.dPt.append(pt)
-
-    dLbls = DataLabelList()
-    dLbls.showSerName = False
-    dLbls.showVal = False
-    dLbls.showCatName = False
-    dLbls.showPercent = False
-    dLbls.showLegendKey = False
-    dLbls.showLeaderLines = True
-    dLbls.dLblPos = "t"
-    series.dLbls = dLbls
-    chart.series.append(series)
+        dLbls = DataLabelList()
+        dLbls.showSerName = True
+        dLbls.showVal = False
+        dLbls.showCatName = False
+        dLbls.showPercent = False
+        dLbls.showLegendKey = False
+        dLbls.showLeaderLines = True
+        dLbls.dLblPos = "t"
+        series.dLbls = dLbls
+        chart.series.append(series)
 
     table_px = _table_width_px(ws, last_col=8)
     chart_px = chart_size_cm * (96.0 / 2.54)
@@ -596,7 +592,6 @@ def _add_openpyxl_chart(
         ext=XDRPositiveSize2D(cx=cm_to_EMU(chart_size_cm), cy=cm_to_EMU(chart_size_cm)),
     )
     ws.add_chart(chart)
-    return _label_range_formula(ws.title, first_data, last_data), label_texts
 
 
 def _patch_chart_xml_label_from_cells(
@@ -1012,7 +1007,6 @@ def _build_sheet(
     include_section_headers: bool,
     used_names: set[str],
     add_chart: bool,
-    label_batches: list[tuple[str, list[str]]],
 ) -> None:
     safe_name = _safe_sheet_title(sheet_name, used_names)
     ws = wb.create_sheet(title=safe_name)
@@ -1040,15 +1034,13 @@ def _build_sheet(
 
     if source_meta and add_chart:
         _hdr, first, last = source_meta
-        label_info = _add_openpyxl_chart(
+        _add_openpyxl_chart(
             ws,
             chart_title=chart_title,
             first=first,
             last=last,
             anchor_row=anchor_row,
         )
-        if label_info:
-            label_batches.append(label_info)
 
     ws.freeze_panes = f"A{next_row + 1}"
     ws.sheet_view.showGridLines = False
@@ -1060,7 +1052,6 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
       - Sheet 1: All Sections (full table + chart)
       - Sheet 2+: one sheet per section (chart titled with section name)
     """
-    label_batches: list[tuple[str, list[str]]] = []
     table = result.get("table") or {}
     sections = table.get("sections") or []
     overall = table.get("overall_csat")
@@ -1096,7 +1087,6 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
         include_section_headers=True,
         used_names=used,
         add_chart=True,
-        label_batches=label_batches,
     )
 
     for sec in sections:
@@ -1129,9 +1119,9 @@ def build_gap_analysis_xlsx(result: dict[str, Any], *, filename: str = "") -> by
             include_section_headers=False,
             used_names=used,
             add_chart=True,
-            label_batches=label_batches,
         )
 
     buf = BytesIO()
     wb.save(buf)
-    return _patch_workbook_charts(buf.getvalue(), label_batches)
+    # Pure openpyxl output — no chart XML rewriting (avoids Excel repair / missing charts).
+    return buf.getvalue()
